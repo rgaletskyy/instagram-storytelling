@@ -70,6 +70,9 @@ A second workflow generates lifestyle product photography rather than a story. W
 brief in `content/input/topic.md` naming the product SKU and the scene you want, then run
 `--lifestyle` (or call `create_lifestyle_content` over MCP). Defaults to 3 images.
 
+The count is **per product**: a brief naming three SKUs produces three sets. Frames are
+named `{sku}-{index}-{role}.jpg`.
+
 It reuses the campaign building blocks — SKU lookup, product-referenced generation,
 verification — but stops at images: `src/resources/lifestyle-content-brief.md` makes text
 baked into the picture an automatic reject, so there is no layout pass and copy is applied

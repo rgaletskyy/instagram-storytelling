@@ -122,7 +122,8 @@ async def create_lifestyle_content(
     is downloaded from the catalogue image URL, falling back to a photo in
     content/input/ when the row has none. Frames are 4:5 (1080x1350).
 
-    Defaults to 3 images when the brief does not say how many.
+    `image_count` is per product: a brief naming three SKUs yields three sets.
+    Defaults to 3 images each when the brief does not say how many.
     """
     return await workflow.create_lifestyle_content(
         topic=topic, image_count=image_count, verify=verify

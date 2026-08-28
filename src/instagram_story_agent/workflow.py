@@ -398,13 +398,15 @@ async def _build_frame(
     out_dir: Path,
     references: list[Path],
     verify: bool = True,
+    prefix: str = "",
 ) -> LifestyleFrame:
     """Generate one lifestyle frame and judge it.
 
     No layout pass: the brief rejects baked-in text, so a frame is the finished
     deliverable and copy is applied later in design.
     """
-    out_path = out_dir / f"{shot.index}-{shot.role}.jpg"
+    stem = f"{prefix}-{shot.index}-{shot.role}" if prefix else f"{shot.index}-{shot.role}"
+    out_path = out_dir / f"{stem}.jpg"
     verdict = None
     issues: list[str] = []
 
@@ -440,13 +442,55 @@ async def _build_frame(
     )
 
 
+async def _product_set(
+    brief: str,
+    product,
+    out_dir: Path,
+    count: int,
+    verify: bool,
+) -> dict:
+    """One lifestyle set for one product."""
+    work = out_dir / f".source-{product.sku if product else 'unknown'}"
+    packshot, references = _packshot(product, work)
+    prefix = product.sku if product else ""
+
+    shot_list = await llm.generate_shot_list(brief, product, packshot, count)
+
+    results = await asyncio.gather(
+        *(
+            _build_frame(s, out_dir, references, verify, prefix)
+            for s in shot_list.shots
+        ),
+        return_exceptions=True,
+    )
+
+    frames: list[LifestyleFrame] = []
+    failed: list[tuple[int, str]] = []
+    for shot, result in zip(shot_list.shots, results, strict=True):
+        if isinstance(result, BaseException):
+            failed.append((shot.index, f"{type(result).__name__}: {result}"))
+        else:
+            frames.append(result)
+
+    return {
+        "sku": product.sku if product else None,
+        "product": product.model_dump(mode="json") if product else None,
+        "packshot": str(packshot) if packshot else None,
+        "images": [str(f.path) for f in frames],
+        "shots": shot_list.model_dump(mode="json"),
+        "failed_images": [list(f) for f in failed],
+        "verdicts": [f.verdict.model_dump(mode="json") for f in frames if f.verdict],
+    }
+
+
 async def create_lifestyle_content(
     topic: str | None = None,
     image_count: int = DEFAULT_LIFESTYLE_IMAGES,
     verify: bool = True,
 ) -> dict:
-    """Lifestyle photography for a product, from a brief naming its SKU.
+    """Lifestyle photography for every product named in the brief.
 
+    `image_count` is per product: a brief naming three SKUs yields three sets.
     Same building blocks as a story campaign -- SKU lookup, product-referenced
     generation, verification -- minus the script and layout steps, because a
     lifestyle set is images only.
@@ -459,39 +503,24 @@ async def create_lifestyle_content(
 
     brief = topic or read_topic()
     products, missing = get_products(extract_skus(brief))
-    product = products[0] if products else None
-
     out_dir = _new_project_dir(brief, LIFESTYLE_FORMAT)
-    work = out_dir / ".source"
-    packshot, references = _packshot(product, work)
 
-    shot_list = await llm.generate_shot_list(brief, product, packshot, image_count)
-
-    results = await asyncio.gather(
-        *(_build_frame(s, out_dir, references, verify) for s in shot_list.shots),
-        return_exceptions=True,
-    )
-
-    frames: list[LifestyleFrame] = []
-    failed: list[tuple[int, str]] = []
-    for shot, result in zip(shot_list.shots, results, strict=True):
-        if isinstance(result, BaseException):
-            failed.append((shot.index, f"{type(result).__name__}: {result}"))
-        else:
-            frames.append(result)
+    # A brief naming no SKU still produces a set, worked from the brief alone.
+    targets = products or [None]
+    sets = [
+        await _product_set(brief, product, out_dir, image_count, verify)
+        for product in targets
+    ]
 
     payload = {
         "output_dir": str(out_dir),
         "format": LIFESTYLE_FORMAT.name,
-        "images": [str(f.path) for f in frames],
-        "shots": shot_list.model_dump(mode="json"),
-        "product": product.model_dump(mode="json") if product else None,
-        "packshot": str(packshot) if packshot else None,
+        "images_per_product": image_count,
+        "sets": sets,
+        "images": [image for s in sets for image in s["images"]],
         "missing_skus": missing,
-        "failed_images": [list(f) for f in failed],
-        "verdicts": [
-            f.verdict.model_dump(mode="json") for f in frames if f.verdict
-        ],
+        "failed_images": [f for s in sets for f in s["failed_images"]],
+        "verdicts": [v for s in sets for v in s["verdicts"]],
     }
     (out_dir / "shots.json").write_text(
         json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8"

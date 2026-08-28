@@ -96,10 +96,44 @@ def test_an_out_of_range_count_creates_nothing(stubbed, count):
     assert [p for p in stubbed.iterdir() if p.is_dir()] == []
 
 
-def test_frames_are_named_by_index_and_role(stubbed):
+def test_frames_are_named_by_sku_index_and_role(stubbed):
     result = asyncio.run(workflow.create_lifestyle_content(topic="тема"))
     names = [p.rsplit("/", 1)[-1] for p in result["images"]]
-    assert names == ["1-hero.jpg", "2-in_use.jpg", "3-with_dog.jpg"]
+    assert names == [
+        "ND-PAWS-01-1-hero.jpg",
+        "ND-PAWS-01-2-in_use.jpg",
+        "ND-PAWS-01-3-with_dog.jpg",
+    ]
+
+
+def test_every_named_sku_gets_its_own_set(stubbed, monkeypatch):
+    """`image_count` is per product: three SKUs at 3 each is nine frames."""
+    monkeypatch.setattr(
+        workflow,
+        "get_products",
+        lambda skus: (
+            [
+                Product(sku=f"SKU-{i}", name=f"P{i}", image_url="https://x/i.png")
+                for i in range(1, 4)
+            ],
+            [],
+        ),
+    )
+    result = asyncio.run(workflow.create_lifestyle_content(topic="тема"))
+    assert len(result["sets"]) == 3
+    assert [s["sku"] for s in result["sets"]] == ["SKU-1", "SKU-2", "SKU-3"]
+    assert len(result["images"]) == 9
+    # Frames from different products must not collide on filename.
+    assert len({p.rsplit("/", 1)[-1] for p in result["images"]}) == 9
+
+
+def test_a_brief_with_no_sku_still_produces_a_set(stubbed, monkeypatch):
+    monkeypatch.setattr(workflow, "get_products", lambda skus: ([], []))
+    monkeypatch.setattr(workflow, "download_product_image", lambda p, d: None)
+    result = asyncio.run(workflow.create_lifestyle_content(topic="тема"))
+    assert len(result["sets"]) == 1
+    assert result["sets"][0]["sku"] is None
+    assert len(result["images"]) == 3
 
 
 def test_the_packshot_is_passed_to_every_frame(stubbed, monkeypatch):
@@ -132,7 +166,7 @@ def test_the_set_falls_back_to_local_photos_without_a_url(stubbed, monkeypatch):
     monkeypatch.setattr(workflow, "local_product_photos", lambda *a, **k: [local])
 
     result = asyncio.run(workflow.create_lifestyle_content(topic="тема"))
-    assert result["packshot"] == str(local)
+    assert result["sets"][0]["packshot"] == str(local)
 
 
 def test_a_rejected_frame_is_retried_with_the_defect_named(stubbed, monkeypatch):
@@ -200,7 +234,7 @@ def test_the_shot_list_is_saved_beside_the_frames(stubbed):
         )
     )
     assert saved["format"] == "lifestyle"
-    assert len(saved["shots"]["shots"]) == 3
+    assert len(saved["sets"][0]["shots"]["shots"]) == 3
 
 
 def test_the_lifestyle_format_carries_no_safe_band():

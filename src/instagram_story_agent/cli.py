@@ -31,9 +31,13 @@ def _run_lifestyle(args) -> int:
         return 1
 
     print(f"saved to {result['output_dir']}  [lifestyle]")
-    print(f"images: {len(result['images'])}/{len(result['shots']['shots'])}")
-    if result["packshot"] is None:
-        print("warning: no product photo found; the packaging may be invented")
+    planned = result["images_per_product"] * len(result["sets"])
+    print(f"images: {len(result['images'])}/{planned}")
+    for one in result["sets"]:
+        label = one["sku"] or "no SKU"
+        print(f"  {label}: {len(one['images'])} images")
+        if one["packshot"] is None:
+            print("    warning: no product photo; the packaging may be invented")
     if result["missing_skus"]:
         print(f"SKUs not in the catalogue: {', '.join(result['missing_skus'])}")
     for v in result["verdicts"]:
@@ -62,8 +66,8 @@ def main() -> int:
         const=DEFAULT_LIFESTYLE_IMAGES,
         default=None,
         metavar="N",
-        help=f"generate N lifestyle product images instead of a campaign "
-        f"(default {DEFAULT_LIFESTYLE_IMAGES})",
+        help=f"generate N lifestyle images per product in the brief, instead "
+        f"of a campaign (default {DEFAULT_LIFESTYLE_IMAGES})",
     )
     parser.add_argument(
         "--format",
