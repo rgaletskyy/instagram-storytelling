@@ -1,0 +1,49 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+dist/
+build/
+
+# Packaging
+lib/
+*.mcpb
+
+# Runtime state — OAuth tokens and run working directories
+.instagram-story-agent/
+
+# Secrets — never commit API keys
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+credentials.json
+service-account*.json
+
+# Tooling
+.ruff_cache/
+.pytest_cache/
+
+# OS / editors
+.DS_Store
+Thumbs.db
+*.swp
+.vscode/
+.idea/
+
+# vendored ffmpeg binaries
+.tools/
+
+# Real product catalogue stays local; the committed sample shows the schema
+# and carries a couple of rows so a fresh clone can run.
+src/resources/products.xlsx
+
+# Campaign content: source photos and generated stories stay local.
+# The folders are kept so the app has somewhere to read from and write to.
+content/input/*
+content/output/*
+!content/input/.gitkeep
+!content/output/.gitkeep

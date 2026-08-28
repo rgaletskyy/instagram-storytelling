@@ -1,0 +1,53 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "instagram-story-agent"
+version = "0.1.0"
+description = "Turns local images and a markdown brief into ready-to-post Instagram story slides."
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "anthropic>=1.0",
+    "google-genai>=2.19",
+    "mcp>=2.1",
+    "openpyxl>=3.1",
+    "playwright>=1.62",
+    "pydantic>=2.7",
+    "pillow>=10.3",
+    "httpx>=0.27",
+    "pyyaml>=6.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.23",
+    "ruff>=0.6",
+]
+
+[project.scripts]
+instagram-story-agent = "instagram_story_agent.cli:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/instagram_story_agent"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]
+ignore = ["E501"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+markers = [
+    "unit: no network, pure functions and schema rules",
+    "contract: request/response shapes against recorded fixtures",
+    "integration: end-to-end against live credentials and a real Drive folder",
+    "slow: makes real image-generation calls; minutes, not seconds",
+]

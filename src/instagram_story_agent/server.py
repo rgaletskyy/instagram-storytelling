@@ -1,0 +1,257 @@
+"""MCP server. Registration and marshalling only -- the logic lives in workflow.py.
+
+Built on mcp.server.MCPServer: mcp.server.fastmcp does not exist in SDK v2.
+"""
+
+from __future__ import annotations
+
+import functools
+import inspect
+from collections.abc import Callable
+from pathlib import Path
+
+from mcp.server import MCPServer
+from mcp.server.mcpserver.exceptions import ToolError
+
+from . import ffmpeg, llm, slide_html, workflow
+from .config import (
+    DEFAULT_SLIDES,
+    DESIGN_GUIDELINES,
+    STORYTELLING_RULES,
+)
+from .models import Product, SlideSpec
+
+mcp = MCPServer(
+    name="instagram-story-agent",
+    title="Instagram Story Telling Agent",
+    description="Builds Instagram story campaigns from local images and a brief.",
+    version="0.1.0",
+)
+
+# Failures we saw coming -- a bad slide count, a missing file, no ffmpeg. Raised as
+# ToolError so the client sees the actual message; anything else is a crash and the
+# SDK deliberately withholds its text.
+_ANTICIPATED = (ValueError, FileNotFoundError, ffmpeg.FFmpegMissingError)
+
+
+def _reporting(fn: Callable) -> Callable:
+    """Surface anticipated failures to the caller instead of a generic error."""
+
+    @functools.wraps(fn)
+    async def wrapper(*args, **kwargs):
+        try:
+            return await fn(*args, **kwargs)
+        except _ANTICIPATED as exc:
+            raise ToolError(str(exc)) from exc
+
+    @functools.wraps(fn)
+    def sync_wrapper(*args, **kwargs):
+        try:
+            return fn(*args, **kwargs)
+        except _ANTICIPATED as exc:
+            raise ToolError(str(exc)) from exc
+
+    return wrapper if inspect.iscoroutinefunction(fn) else sync_wrapper
+
+
+# --- Workflow tools ----------------------------------------------------------
+
+
+@mcp.tool()
+@_reporting
+async def create_story_campaign(
+    topic: str | None = None,
+    slide_count: int = DEFAULT_SLIDES,
+    verify: bool = True,
+) -> dict:
+    """Run the whole campaign: describe input, write the script, render and verify."""
+    campaign = await workflow.create_story_campaign(
+        topic=topic, slide_count=slide_count, verify=verify
+    )
+    return {
+        "output_dir": str(campaign.output_dir),
+        "slides": [str(p) for p in campaign.slide_paths],
+        "script": campaign.script.model_dump(mode="json"),
+        "missing_skus": campaign.missing_skus,
+        "failed_slides": [list(f) for f in campaign.failed_slides],
+        "verdicts": [v.model_dump(mode="json") for v in campaign.verdicts],
+    }
+
+
+@mcp.tool()
+@_reporting
+async def regenerate_slide(project_dir: str, slide_index: int, comment: str) -> str:
+    """Redo one slide of a saved campaign from a comment, leaving the others alone."""
+    return str(await workflow.regenerate_slide(project_dir, slide_index, comment))
+
+
+@mcp.tool()
+@_reporting
+def save_project(output_dir: str) -> str:
+    """Report a saved campaign folder. Campaigns are saved as they are generated."""
+    path = Path(output_dir)
+    if not (path / "script.json").exists():
+        raise ValueError(f"no campaign at {output_dir}")
+    return str(path)
+
+
+# --- Content tools -----------------------------------------------------------
+
+
+@mcp.tool()
+@_reporting
+def get_product(skus: list[str]) -> dict:
+    """Look product SKUs up in the catalogue."""
+    found, missing = workflow.get_products(skus)
+    return {
+        "products": [p.model_dump(mode="json") for p in found],
+        "missing": missing,
+    }
+
+
+@mcp.tool()
+@_reporting
+async def describe_image(image_path: str) -> str:
+    """Describe an image in detail."""
+    return await llm.describe_image(image_path)
+
+
+@mcp.tool()
+@_reporting
+async def generate_image(prompt: str, out_path: str) -> str:
+    """Generate a 9:16 background image. The prompt must not contain a URL."""
+    return str(await llm.generate_image(prompt, out_path))
+
+
+@mcp.tool()
+@_reporting
+async def generate_storytelling_script(
+    topic: str,
+    descriptions: list[str],
+    products: list[dict] | None = None,
+    slide_count: int = DEFAULT_SLIDES,
+) -> dict:
+    """Write the campaign script for a topic."""
+    script = await llm.generate_script(
+        topic=topic,
+        descriptions=descriptions,
+        products=[Product.model_validate(p) for p in (products or [])],
+        slide_count=slide_count,
+    )
+    return script.model_dump(mode="json")
+
+
+@mcp.tool()
+@_reporting
+async def render_story_slide(
+    background_path: str,
+    overlay_text: str,
+    out_path: str,
+    role: str = "solution",
+    slide_index: int = 1,
+) -> str:
+    """Lay a slide out as HTML over a background and screenshot it to a JPG.
+
+    The layout model sees the background, so copy is placed around the subject
+    rather than stamped at a fixed position.
+    """
+    background = Path(background_path)
+    slide = SlideSpec(
+        index=slide_index,
+        role=role,
+        image_prompt="",
+        overlay_text=overlay_text,
+    )
+    html = await llm.generate_slide_html(slide, background)
+    return str(
+        await slide_html.screenshot(html, Path(out_path), background.parent)
+    )
+
+
+@mcp.tool()
+@_reporting
+async def validate_slide(
+    image_path: str, overlay_text: str, role: str = "solution", slide_index: int = 1
+) -> dict:
+    """Check a rendered slide against the design guidelines and its own copy."""
+    slide = SlideSpec(
+        index=slide_index,
+        role=role,
+        image_prompt="",
+        overlay_text=overlay_text,
+    )
+    verdict = await llm.verify_slide(Path(image_path), slide)
+    return verdict.model_dump(mode="json")
+
+
+# --- Video tools -------------------------------------------------------------
+
+
+@mcp.tool()
+@_reporting
+async def transcribe_video(video_path: str) -> str:
+    """Extract the audio track and transcribe it. Empty when there is no audio."""
+    import tempfile
+
+    video = Path(video_path)
+    with tempfile.TemporaryDirectory() as tmp:
+        audio = await ffmpeg.extract_audio(video, Path(tmp) / "audio.wav")
+        if audio is None:
+            return ""
+        return await llm.transcribe_audio(audio)
+
+
+@mcp.tool()
+@_reporting
+async def describe_video(video_path: str, frame_count: int = 8) -> str:
+    """Describe a video from sampled frames plus its transcript."""
+    described = await workflow.describe_video(Path(video_path), frame_count)
+    return described.as_context()
+
+
+# --- Resources ---------------------------------------------------------------
+
+
+@mcp.resource(
+    "content://story-design-guidelines.md",
+    name="Story design guidelines",
+    mime_type="text/markdown",
+)
+def design_guidelines() -> str:
+    """Brand rules for how a story slide must look."""
+    return DESIGN_GUIDELINES.read_text(encoding="utf-8")
+
+
+@mcp.resource(
+    "content://story-telling-rules.md",
+    name="Story telling rules",
+    mime_type="text/markdown",
+)
+def storytelling_rules() -> str:
+    """Rules for what a story says and in what order."""
+    return STORYTELLING_RULES.read_text(encoding="utf-8")
+
+
+# --- Prompt ------------------------------------------------------------------
+
+
+@mcp.prompt()
+def story_campaign(topic: str, slide_count: int = DEFAULT_SLIDES) -> str:
+    """Guide a chat client through building a campaign."""
+    return (
+        "Read content://story-telling-rules.md and "
+        "content://story-design-guidelines.md first, then call "
+        f"create_story_campaign with topic={topic!r} and "
+        f"slide_count={slide_count}. Report the output folder and any slides "
+        "that failed."
+    )
+
+
+def main() -> int:
+    # ffmpeg is checked lazily: it is only needed when video input is supplied.
+    mcp.run(transport="stdio")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
