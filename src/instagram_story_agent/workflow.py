@@ -13,11 +13,14 @@ from pathlib import Path
 
 from . import ffmpeg, llm, slide_html
 from .config import (
+    DEFAULT_LIFESTYLE_IMAGES,
     DEFAULT_SLIDES,
     FORMATS,
     GEMINI_IMAGE_PRO_MODEL,
     IMAGE_SUFFIXES,
     INPUT_DIR,
+    LIFESTYLE_FORMAT,
+    MAX_LIFESTYLE_IMAGES,
     MAX_SLIDES,
     MIN_SLIDES,
     OUTPUT_DIR,
@@ -31,11 +34,18 @@ from .config import (
 from .models import (
     Campaign,
     CampaignScript,
+    LifestyleFrame,
+    LifestyleShot,
     MediaDescription,
     SlideSpec,
     SlideVerdict,
 )
-from .products import extract_skus, get_products
+from .products import (
+    download_product_image,
+    extract_skus,
+    get_products,
+    local_product_photos,
+)
 
 _URL_RE = re.compile(r"(https?://|www\.)", re.IGNORECASE)
 
@@ -363,3 +373,127 @@ async def create_post_campaign(
 ) -> Campaign:
     """A 1:1 square feed post or carousel."""
     return await create_campaign(topic, slide_count, verify, POST_FORMAT)
+
+
+# --- Lifestyle content -------------------------------------------------------
+
+
+def _packshot(product, work: Path) -> tuple[Path | None, list[Path]]:
+    """The product photograph to hold the generation to.
+
+    Prefers the catalogue's own image; falls back to a photo supplied in the
+    input folder, since a good sixth of the catalogue has no image URL.
+    """
+    if product is not None:
+        downloaded = download_product_image(product, work)
+        if downloaded is not None:
+            return downloaded, [downloaded]
+
+    local = local_product_photos()
+    return (local[0] if local else None), local
+
+
+async def _build_frame(
+    shot: LifestyleShot,
+    out_dir: Path,
+    references: list[Path],
+    verify: bool = True,
+) -> LifestyleFrame:
+    """Generate one lifestyle frame and judge it.
+
+    No layout pass: the brief rejects baked-in text, so a frame is the finished
+    deliverable and copy is applied later in design.
+    """
+    out_path = out_dir / f"{shot.index}-{shot.role}.jpg"
+    verdict = None
+    issues: list[str] = []
+
+    for _attempt in range(VERIFY_RETRIES + 1):
+        prompt = shot.prompt
+        if shot.excludes:
+            prompt = f"{prompt}\n\nDo not include: {shot.excludes}"
+        if issues:
+            # Section 13 asks for a targeted correction naming the defect,
+            # rather than a fresh invention of the whole scene.
+            prompt = (
+                f"{prompt}\n\nThe previous attempt was rejected. Keep everything "
+                f"that worked and fix only these defects:\n"
+                + "\n".join(f"- {i}" for i in issues)
+            )
+
+        await llm.generate_image(
+            prompt,
+            out_path,
+            references=references or None,
+            aspect_ratio=LIFESTYLE_FORMAT.aspect_ratio,
+        )
+        slide_html.normalize(out_path, LIFESTYLE_FORMAT)
+        if not verify:
+            break
+        verdict = await llm.verify_lifestyle_frame(out_path, shot)
+        if verdict.passed:
+            break
+        issues = verdict.issues
+
+    return LifestyleFrame(
+        index=shot.index, role=shot.role, path=out_path, verdict=verdict
+    )
+
+
+async def create_lifestyle_content(
+    topic: str | None = None,
+    image_count: int = DEFAULT_LIFESTYLE_IMAGES,
+    verify: bool = True,
+) -> dict:
+    """Lifestyle photography for a product, from a brief naming its SKU.
+
+    Same building blocks as a story campaign -- SKU lookup, product-referenced
+    generation, verification -- minus the script and layout steps, because a
+    lifestyle set is images only.
+    """
+    if not 1 <= image_count <= MAX_LIFESTYLE_IMAGES:
+        raise ValueError(
+            f"image_count must be between 1 and {MAX_LIFESTYLE_IMAGES}, "
+            f"got {image_count}"
+        )
+
+    brief = topic or read_topic()
+    products, missing = get_products(extract_skus(brief))
+    product = products[0] if products else None
+
+    out_dir = _new_project_dir(brief, LIFESTYLE_FORMAT)
+    work = out_dir / ".source"
+    packshot, references = _packshot(product, work)
+
+    shot_list = await llm.generate_shot_list(brief, product, packshot, image_count)
+
+    results = await asyncio.gather(
+        *(_build_frame(s, out_dir, references, verify) for s in shot_list.shots),
+        return_exceptions=True,
+    )
+
+    frames: list[LifestyleFrame] = []
+    failed: list[tuple[int, str]] = []
+    for shot, result in zip(shot_list.shots, results, strict=True):
+        if isinstance(result, BaseException):
+            failed.append((shot.index, f"{type(result).__name__}: {result}"))
+        else:
+            frames.append(result)
+
+    payload = {
+        "output_dir": str(out_dir),
+        "format": LIFESTYLE_FORMAT.name,
+        "images": [str(f.path) for f in frames],
+        "shots": shot_list.model_dump(mode="json"),
+        "product": product.model_dump(mode="json") if product else None,
+        "packshot": str(packshot) if packshot else None,
+        "missing_skus": missing,
+        "failed_images": [list(f) for f in failed],
+        "verdicts": [
+            f.verdict.model_dump(mode="json") for f in frames if f.verdict
+        ],
+    }
+    (out_dir / "shots.json").write_text(
+        json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
+    return payload

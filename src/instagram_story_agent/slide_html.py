@@ -60,3 +60,28 @@ async def screenshot(
 
     page_file.unlink(missing_ok=True)
     return out_path
+
+
+def normalize(image: Path, fmt: CanvasFormat) -> Path:
+    """Resize a generated frame to the format's exact delivery size.
+
+    Gemini returns its own resolution at roughly the requested aspect, which is
+    close to but not exactly 4:5. Section 9 of the lifestyle brief specifies
+    delivery dimensions, so centre-crop to the exact aspect and resize.
+    """
+    from PIL import Image
+
+    with Image.open(image) as im:
+        im = im.convert("RGB")
+        target = fmt.width / fmt.height
+        width, height = im.size
+        if width / height > target:
+            new_w = int(height * target)
+            box = ((width - new_w) // 2, 0, (width - new_w) // 2 + new_w, height)
+        else:
+            new_h = int(width / target)
+            box = (0, (height - new_h) // 2, width, (height - new_h) // 2 + new_h)
+        im.crop(box).resize(
+            (fmt.width, fmt.height), Image.LANCZOS
+        ).save(image, "JPEG", quality=SCREENSHOT_QUALITY)
+    return image

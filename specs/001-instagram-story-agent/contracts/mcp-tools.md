@@ -37,6 +37,18 @@ Identical to `create_story_campaign` but on a **1:1 square artboard** (1080×108
 
 Both campaign tools return a `format` field naming the artboard used, and the format is persisted in `script.json` so `regenerate_slide` re-renders at the right size.
 
+### `create_lifestyle_content`
+```python
+async def create_lifestyle_content(
+    topic: str | None = None,
+    image_count: int = 3,
+    verify: bool = True,
+) -> dict
+```
+Lifestyle product photography for the SKU named in the brief. Returns `{output_dir, format, images, shots, product, packshot, missing_skus, failed_images, verdicts}`.
+
+Reuses SKU lookup, product-referenced generation and verification, but has **no script or layout step** — `content://lifestyle-content-brief.md` §10 makes baked-in text an automatic reject, so a frame is the finished deliverable. Frames are 4:5, normalised to 1080×1350 per §9. The packshot comes from the catalogue image URL, falling back to a photo in `content/input/`.
+
 ### `get_product`
 ```python
 def get_product(skus: list[str]) -> dict
@@ -130,6 +142,7 @@ Writes slides + `script.json` to `content/output/<slug>-<YYYYMMDD-HHMMSS>/`, ret
 |---|---|---|
 | `content://story-design-guidelines.md` | `text/markdown` | `src/resources/story-design-guidelines.md` |
 | `content://story-telling-rules.md` | `text/markdown` | `src/resources/story-telling-rules.md` |
+| `content://lifestyle-content-brief.md` | `text/markdown` | `src/resources/lifestyle-content-brief.md` |
 
 Both are served verbatim.
 

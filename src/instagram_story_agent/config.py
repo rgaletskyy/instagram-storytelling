@@ -24,6 +24,7 @@ _PRODUCTS_SAMPLE = RESOURCES_DIR / "products.sample.xlsx"
 PRODUCTS_XLSX = _PRODUCTS_REAL if _PRODUCTS_REAL.exists() else _PRODUCTS_SAMPLE
 DESIGN_GUIDELINES = RESOURCES_DIR / "story-design-guidelines.md"
 STORYTELLING_RULES = RESOURCES_DIR / "story-telling-rules.md"
+LIFESTYLE_BRIEF = RESOURCES_DIR / "lifestyle-content-brief.md"
 
 IMAGE_SUFFIXES = {".jpg", ".jpeg", ".png", ".webp"}
 VIDEO_SUFFIXES = {".mp4", ".mov", ".m4v", ".avi"}
@@ -120,13 +121,31 @@ POST_FORMAT = CanvasFormat(
     ),
 )
 
-FORMATS = {f.name: f for f in (STORY_FORMAT, POST_FORMAT)}
+# Lifestyle frames carry no copy -- the brief makes baked-in text an automatic
+# reject -- so there is no safe band to respect, only the delivery size from
+# lifestyle-content-brief.md section 9.
+LIFESTYLE_FORMAT = CanvasFormat(
+    name="lifestyle",
+    width=1080,
+    height=1350,
+    aspect_ratio="4:5",
+    safe_top=0,
+    safe_bottom=1350,
+    safe_note="no copy is applied to a lifestyle frame; text is added later in design",
+)
+
+FORMATS = {f.name: f for f in (STORY_FORMAT, POST_FORMAT, LIFESTYLE_FORMAT)}
 
 
 # --- Story shape -------------------------------------------------------------
 # src/resources/story-telling-rules.md section 2.
 
 VERIFY_RETRIES = 1
+
+# Lifestyle sets: the brief asks for 6-8 frames per product, but a run defaults
+# to a smaller set because each frame is a separate generation.
+DEFAULT_LIFESTYLE_IMAGES = 3
+MAX_LIFESTYLE_IMAGES = 8
 
 MIN_SLIDES = 3
 MAX_SLIDES = 7

@@ -15,9 +15,11 @@ from mcp.server.mcpserver.exceptions import ToolError
 
 from . import ffmpeg, llm, slide_html, workflow
 from .config import (
+    DEFAULT_LIFESTYLE_IMAGES,
     DEFAULT_SLIDES,
     DESIGN_GUIDELINES,
     FORMATS,
+    LIFESTYLE_BRIEF,
     STORY_FORMAT,
     STORYTELLING_RULES,
 )
@@ -103,6 +105,28 @@ async def create_post_campaign(
         topic=topic, slide_count=slide_count, verify=verify
     )
     return _campaign_payload(campaign)
+
+
+@mcp.tool()
+@_reporting
+async def create_lifestyle_content(
+    topic: str | None = None,
+    image_count: int = DEFAULT_LIFESTYLE_IMAGES,
+    verify: bool = True,
+) -> dict:
+    """Generate lifestyle photography for a product named by SKU in the brief.
+
+    Reuses the campaign building blocks -- SKU lookup, product-referenced
+    generation, verification -- but stops at images: a lifestyle frame carries
+    no copy, because the brief rejects text baked into the picture. The packshot
+    is downloaded from the catalogue image URL, falling back to a photo in
+    content/input/ when the row has none. Frames are 4:5 (1080x1350).
+
+    Defaults to 3 images when the brief does not say how many.
+    """
+    return await workflow.create_lifestyle_content(
+        topic=topic, image_count=image_count, verify=verify
+    )
 
 
 @mcp.tool()
@@ -270,6 +294,16 @@ async def describe_video(video_path: str, frame_count: int = 8) -> str:
 def design_guidelines() -> str:
     """Brand rules for how a story slide must look."""
     return DESIGN_GUIDELINES.read_text(encoding="utf-8")
+
+
+@mcp.resource(
+    "content://lifestyle-content-brief.md",
+    name="Lifestyle content brief",
+    mime_type="text/markdown",
+)
+def lifestyle_brief() -> str:
+    """Standing brief for lifestyle product photography."""
+    return LIFESTYLE_BRIEF.read_text(encoding="utf-8")
 
 
 @mcp.resource(

@@ -6,9 +6,42 @@ import argparse
 import asyncio
 import sys
 
-from .config import DEFAULT_SLIDES, FORMATS, STORY_FORMAT
+from .config import (
+    DEFAULT_LIFESTYLE_IMAGES,
+    DEFAULT_SLIDES,
+    FORMATS,
+    STORY_FORMAT,
+)
 from .ffmpeg import FFmpegMissingError
-from .workflow import create_campaign
+from .workflow import create_campaign, create_lifestyle_content
+
+
+def _run_lifestyle(args) -> int:
+    """Lifestyle images: no script, no layout, just frames."""
+    try:
+        result = asyncio.run(
+            create_lifestyle_content(
+                topic=args.topic,
+                image_count=args.lifestyle,
+                verify=not args.no_verify,
+            )
+        )
+    except (ValueError, FileNotFoundError) as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
+
+    print(f"saved to {result['output_dir']}  [lifestyle]")
+    print(f"images: {len(result['images'])}/{len(result['shots']['shots'])}")
+    if result["packshot"] is None:
+        print("warning: no product photo found; the packaging may be invented")
+    if result["missing_skus"]:
+        print(f"SKUs not in the catalogue: {', '.join(result['missing_skus'])}")
+    for v in result["verdicts"]:
+        if not v["passed"]:
+            print(f"frame {v['index']} flagged: {'; '.join(v['issues'])}")
+    for index, error in result["failed_images"]:
+        print(f"frame {index} failed: {error}", file=sys.stderr)
+    return 0
 
 
 def main() -> int:
@@ -23,6 +56,16 @@ def main() -> int:
         "--topic", default=None, help="override content/input/topic.md"
     )
     parser.add_argument(
+        "--lifestyle",
+        nargs="?",
+        type=int,
+        const=DEFAULT_LIFESTYLE_IMAGES,
+        default=None,
+        metavar="N",
+        help=f"generate N lifestyle product images instead of a campaign "
+        f"(default {DEFAULT_LIFESTYLE_IMAGES})",
+    )
+    parser.add_argument(
         "--format",
         choices=sorted(FORMATS),
         default=STORY_FORMAT.name,
@@ -34,6 +77,9 @@ def main() -> int:
         help="skip the design verification pass on each rendered slide",
     )
     args = parser.parse_args()
+
+    if args.lifestyle is not None:
+        return _run_lifestyle(args)
 
     try:
         campaign = asyncio.run(

@@ -61,6 +61,35 @@ class SlideVerdict(BaseModel):
     notes: str = ""
 
 
+ShotRole = Literal["hero", "in_hand", "in_use", "with_dog", "detail", "flat_lay"]
+
+
+class LifestyleShot(BaseModel):
+    """One frame of a lifestyle set. Section 4 of the lifestyle brief."""
+
+    index: int
+    role: ShotRole
+    prompt: str
+    excludes: str = ""
+    has_human: bool = False
+
+
+class LifestyleSet(BaseModel):
+    """The shot list for one product."""
+
+    topic: str
+    shots: list[LifestyleShot]
+
+
+class LifestyleFrame(BaseModel):
+    """A rendered frame and how it was judged."""
+
+    index: int
+    role: ShotRole
+    path: Path
+    verdict: SlideVerdict | None = None
+
+
 class MediaDescription(BaseModel):
     """An input asset and the description derived from it."""
 

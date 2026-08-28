@@ -9,6 +9,7 @@ from instagram_story_agent.server import mcp
 pytestmark = pytest.mark.contract
 
 EXPECTED_TOOLS = {
+    "create_lifestyle_content",
     "create_post_campaign",
     "create_story_campaign",
     "describe_image",
@@ -37,12 +38,13 @@ async def test_the_verifier_is_exposed_as_a_tool():
     assert "validate_slide" in names
 
 
-async def test_both_brand_resources_are_published():
+async def test_every_brand_resource_is_published():
     async with Client(mcp) as client:
         uris = {str(r.uri) for r in (await client.list_resources()).resources}
     assert uris == {
         "content://story-design-guidelines.md",
         "content://story-telling-rules.md",
+        "content://lifestyle-content-brief.md",
     }
 
 
@@ -105,3 +107,18 @@ async def test_render_and_validate_accept_a_format():
         tools = {t.name: t for t in (await client.list_tools()).tools}
     for name in ("render_story_slide", "validate_slide"):
         assert "format" in tools[name].input_schema["properties"], name
+
+
+async def test_the_lifestyle_brief_is_readable():
+    async with Client(mcp) as client:
+        contents = (
+            await client.read_resource("content://lifestyle-content-brief.md")
+        ).contents
+    assert "Lifestyle Content Brief" in contents[0].text
+
+
+async def test_lifestyle_content_defaults_to_three_images():
+    async with Client(mcp) as client:
+        tools = {t.name: t for t in (await client.list_tools()).tools}
+    schema = tools["create_lifestyle_content"].input_schema["properties"]
+    assert schema["image_count"]["default"] == 3

@@ -7,12 +7,14 @@ are pulled out of the text and then validated against the sheet.
 from __future__ import annotations
 
 import html
+import mimetypes
 import re
 from pathlib import Path
 
+import httpx
 from openpyxl import load_workbook
 
-from .config import PRODUCTS_XLSX
+from .config import IMAGE_SUFFIXES, INPUT_DIR, PRODUCTS_XLSX
 from .models import Product
 
 # Catalogue SKUs look like BO-FIU150 / ND-PAWS-01.
@@ -108,3 +110,42 @@ def get_products(
             )
         )
     return found, missing
+
+
+def download_product_image(product: Product, out_dir: Path) -> Path | None:
+    """Fetch the packshot named in the catalogue.
+
+    Returns None when the row has no image URL or the fetch fails; callers fall
+    back to a local photo. Roughly a sixth of the catalogue has an empty photo
+    column, so a missing URL is ordinary, not exceptional.
+    """
+    if not product.image_url.startswith(("http://", "https://")):
+        return None
+
+    out_dir.mkdir(parents=True, exist_ok=True)
+    try:
+        response = httpx.get(product.image_url, timeout=30, follow_redirects=True)
+        response.raise_for_status()
+    except httpx.HTTPError:
+        return None
+
+    media_type = response.headers.get("content-type", "").split(";")[0].strip()
+    if not media_type.startswith("image/"):
+        return None
+
+    suffix = mimetypes.guess_extension(media_type) or ".jpg"
+    path = out_dir / f"{product.sku}{suffix}"
+    path.write_bytes(response.content)
+    return path
+
+
+def local_product_photos(input_dir: Path | None = None, limit: int = 2) -> list[Path]:
+    """Photos supplied in the input folder, as a fallback packshot source."""
+    directory = input_dir or INPUT_DIR
+    if not directory.exists():
+        return []
+    return sorted(
+        p
+        for p in directory.iterdir()
+        if p.is_file() and p.suffix.lower() in IMAGE_SUFFIXES
+    )[:limit]

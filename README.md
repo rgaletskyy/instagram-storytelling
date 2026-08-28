@@ -34,6 +34,8 @@ Put your source photos and a `topic.md` brief in `content/input/`; results land 
 uv run instagram-story-agent --slides 5                # 9:16 story
 uv run instagram-story-agent --slides 5 --format post  # 1:1 square feed post
 uv run instagram-story-agent --slides 5 --no-verify    # skip the design review pass
+uv run instagram-story-agent --lifestyle               # 3 lifestyle product photos (4:5)
+uv run instagram-story-agent --lifestyle 6             # ...or however many
 
 # as an MCP server (stdio)
 uv run python -m instagram_story_agent.server
@@ -57,9 +59,25 @@ uv run python -m instagram_story_agent.server
 |---|---|---|---|
 | `story` (default) | 1080×1920 | 9:16 | `y = 250…1670` — Instagram's UI covers the bands |
 | `post` | 1080×1080 | 1:1 | the 72px margin; a feed post has no UI over it |
+| `lifestyle` | 1080×1350 | 4:5 | none — lifestyle frames carry no copy |
 
 Stories and posts run the same pipeline and the same brand rules; only the artboard
 differs. Over MCP that is `create_story_campaign` vs `create_post_campaign`.
+
+## Lifestyle content
+
+A second workflow generates lifestyle product photography rather than a story. Write a
+brief in `content/input/topic.md` naming the product SKU and the scene you want, then run
+`--lifestyle` (or call `create_lifestyle_content` over MCP). Defaults to 3 images.
+
+It reuses the campaign building blocks — SKU lookup, product-referenced generation,
+verification — but stops at images: `src/resources/lifestyle-content-brief.md` makes text
+baked into the picture an automatic reject, so there is no layout pass and copy is applied
+later in design.
+
+The packshot is downloaded from the catalogue's image URL. Around a sixth of the catalogue
+has no URL, so it falls back to a photo in `content/input/`; without either, the packaging
+would be invented and the run says so.
 
 ## Product catalogue
 
