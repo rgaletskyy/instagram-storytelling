@@ -31,8 +31,9 @@ Put your source photos and a `topic.md` brief in `content/input/`; results land 
 
 ```bash
 # from code
-uv run instagram-story-agent --slides 5
-uv run instagram-story-agent --slides 5 --no-verify   # skip the design review pass
+uv run instagram-story-agent --slides 5                # 9:16 story
+uv run instagram-story-agent --slides 5 --format post  # 1:1 square feed post
+uv run instagram-story-agent --slides 5 --no-verify    # skip the design review pass
 
 # as an MCP server (stdio)
 uv run python -m instagram_story_agent.server
@@ -49,6 +50,16 @@ uv run python -m instagram_story_agent.server
 | Verify the rendered slide | `claude-sonnet-5` |
 | Regenerate a slide background | `gemini-3-pro-image` |
 | Transcribe extracted audio | `gemini-3.5-transcribe` |
+
+## Formats
+
+| Format | Artboard | Aspect | Safe area |
+|---|---|---|---|
+| `story` (default) | 1080×1920 | 9:16 | `y = 250…1670` — Instagram's UI covers the bands |
+| `post` | 1080×1080 | 1:1 | the 72px margin; a feed post has no UI over it |
+
+Stories and posts run the same pipeline and the same brand rules; only the artboard
+differs. Over MCP that is `create_story_campaign` vs `create_post_campaign`.
 
 ## Product catalogue
 

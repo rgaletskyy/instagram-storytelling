@@ -52,7 +52,8 @@ def stubbed(monkeypatch, tmp_path):
     async def fake_script(**_kwargs):
         return _script()
 
-    async def fake_image(prompt, out_path, model=None, references=None):
+    async def fake_image(prompt, out_path, model=None, references=None,
+                         aspect_ratio=None):
         from pathlib import Path
 
         path = Path(out_path)
@@ -60,10 +61,10 @@ def stubbed(monkeypatch, tmp_path):
         path.write_bytes(b"jpeg")
         return path
 
-    async def fake_html(slide, background, issues=None):
+    async def fake_html(slide, background, issues=None, fmt=None):
         return f"<html><body>{slide.overlay_text}</body></html>"
 
-    async def fake_shot(html, out_path, base_dir):
+    async def fake_shot(html, out_path, base_dir, fmt=None):
         from pathlib import Path
 
         path = Path(out_path)
@@ -71,7 +72,7 @@ def stubbed(monkeypatch, tmp_path):
         path.write_bytes(b"slide")
         return path
 
-    async def fake_verify(image, slide):
+    async def fake_verify(image, slide, fmt=None):
         return SlideVerdict(index=slide.index, passed=True)
 
     monkeypatch.setattr(llm, "inspect_image", fake_inspect)
@@ -115,7 +116,8 @@ def test_campaign_saves_slides_and_script(stubbed):
 
 
 def test_one_failing_slide_does_not_discard_the_others(stubbed, monkeypatch):
-    async def flaky(prompt, out_path, model=None, references=None):
+    async def flaky(prompt, out_path, model=None, references=None,
+                    aspect_ratio=None):
         from pathlib import Path
 
         if prompt.endswith("slide 2"):
@@ -166,12 +168,12 @@ def test_a_rejected_slide_is_retried_with_the_issues_as_feedback(stubbed, monkey
     seen: list[list[str] | None] = []
     attempts = {"n": 0}
 
-    async def counting_html(slide, background, issues=None):
+    async def counting_html(slide, background, issues=None, fmt=None):
         if slide.index == 1:
             seen.append(issues)
         return "<html></html>"
 
-    async def picky(image, slide):
+    async def picky(image, slide, fmt=None):
         if slide.index == 1:
             attempts["n"] += 1
             if attempts["n"] == 1:
@@ -187,7 +189,7 @@ def test_a_rejected_slide_is_retried_with_the_issues_as_feedback(stubbed, monkey
 
 
 def test_a_slide_that_never_passes_is_still_kept_and_reported(stubbed, monkeypatch):
-    async def always_fail(image, slide):
+    async def always_fail(image, slide, fmt=None):
         return SlideVerdict(index=slide.index, passed=False, issues=["still ugly"])
 
     monkeypatch.setattr(llm, "verify_slide", always_fail)
@@ -199,7 +201,7 @@ def test_a_slide_that_never_passes_is_still_kept_and_reported(stubbed, monkeypat
 
 
 def test_verification_can_be_skipped(stubbed, monkeypatch):
-    async def boom(image, slide):
+    async def boom(image, slide, fmt=None):
         raise AssertionError("verifier must not run when verify=False")
 
     monkeypatch.setattr(llm, "verify_slide", boom)
@@ -238,7 +240,8 @@ def test_the_packshot_reaches_only_product_slides(stubbed, monkeypatch):
     """A hook about the problem must not have the bottle composited into it."""
     seen: dict[int, object] = {}
 
-    async def recording_image(prompt, out_path, model=None, references=None):
+    async def recording_image(prompt, out_path, model=None, references=None,
+                              aspect_ratio=None):
         from pathlib import Path
 
         index = int(Path(out_path).parent.name.rsplit("_", 1)[1])

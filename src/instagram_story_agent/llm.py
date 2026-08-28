@@ -11,8 +11,6 @@ from pydantic import BaseModel
 
 from .config import (
     BODY_MAX_PX,
-    CANVAS_H,
-    CANVAS_W,
     CLAUDE_DESCRIBE_MODEL,
     CLAUDE_SCRIPT_MODEL,
     DESIGN_GUIDELINES,
@@ -22,11 +20,10 @@ from .config import (
     HEADLINE_MAX_PX,
     MAX_SLIDES,
     MIN_SLIDES,
-    SAFE_BOTTOM,
-    SAFE_TOP,
     SIDE_MARGIN,
+    STORY_FORMAT,
     STORYTELLING_RULES,
-    TEXT_BLOCK_MAX_H,
+    CanvasFormat,
     load_dotenv,
 )
 from .models import CampaignScript, Product, SlideSpec, SlideVerdict
@@ -258,8 +255,9 @@ async def generate_image(
     out_path: str | Path,
     model: str = GEMINI_IMAGE_MODEL,
     references: list[Path] | None = None,
+    aspect_ratio: str = STORY_FORMAT.aspect_ratio,
 ) -> Path:
-    """Generate a 9:16 background. The prompt must never contain a URL.
+    """Generate a background at the given aspect. The prompt must never hold a URL.
 
     When reference photographs are supplied, the real product is composited from
     them rather than imagined -- an image model left to itself invents plausible
@@ -289,7 +287,7 @@ async def generate_image(
         response_format={
             "type": "image",
             "mime_type": "image/jpeg",
-            "aspect_ratio": "9:16",
+            "aspect_ratio": aspect_ratio,
             "image_size": "2K",
         },
     )
@@ -392,23 +390,27 @@ def _layout_system() -> list[dict]:
     ]
 
 
-_LAYOUT_RULES = f"""Return one complete standalone HTML document.
+def _layout_rules(fmt: CanvasFormat) -> str:
+    """The layout contract, sized to the artboard being rendered."""
+    return f"""Return one complete standalone HTML document.
 
 Hard requirements:
-- <body> is exactly {CANVAS_W}x{CANVAS_H} px, margin 0, overflow hidden.
+- <body> is exactly {fmt.width}x{fmt.height} px, margin 0, overflow hidden.
 - The supplied background image is the file `background.jpg` in the same folder.
   Use it as a full-bleed layer with object-fit: cover.
 - Load the brand fonts with:
   <link rel="stylesheet" href="{GOOGLE_FONTS_HREF}">
   Headings use 'Bitter', body copy uses 'Noto Sans'. Use no other typeface.
-- All text and any CTA must sit between y={SAFE_TOP}px and y={SAFE_BOTTOM}px,
-  with at least {SIDE_MARGIN}px clear on the left and right.
+- All text and any CTA must sit between y={fmt.safe_top}px and y={fmt.safe_bottom}px,
+  with at least {SIDE_MARGIN}px clear on the left and right --
+  {fmt.safe_note}.
 
 THE TEXT BLOCK MUST BE SMALL AND MUST NOT COVER THE SUBJECT.
 Treat the card, panel, scrim or gradient behind the copy as part of the text
 block: what matters is the whole shape, not just the letters.
-- The entire text block is at most {TEXT_BLOCK_MAX_H}px tall -- about a quarter
-  of the frame. If the copy will not fit, reduce the type size, not the margins.
+- The entire text block is at most {fmt.text_block_max_h}px tall -- about a
+  quarter of the frame. If the copy will not fit, reduce the type size, not the
+  margins.
 - It is NEVER full-bleed. Inset it at least {SIDE_MARGIN}px from both edges so
   the photograph is visible down both sides of it.
 - Headline at most {HEADLINE_MAX_PX}px, body copy at most {BODY_MAX_PX}px.
@@ -429,7 +431,10 @@ Explain in `placement_reason` where you put the text and what you avoided."""
 
 
 async def generate_slide_html(
-    slide: SlideSpec, background: Path, issues: list[str] | None = None
+    slide: SlideSpec,
+    background: Path,
+    issues: list[str] | None = None,
+    fmt: CanvasFormat = STORY_FORMAT,
 ) -> str:
     """Lay a slide out as HTML/CSS, with the background image in view.
 
@@ -458,7 +463,7 @@ async def generate_slide_html(
                         "text": (
                             f"Slide {slide.index} of the campaign, role: {slide.role}.\n"
                             f"Overlay copy to display verbatim:\n{slide.overlay_text}\n\n"
-                            f"{_LAYOUT_RULES}{retry_note}"
+                            f"{_layout_rules(fmt)}{retry_note}"
                         ),
                     },
                 ],
@@ -472,7 +477,9 @@ async def generate_slide_html(
     return layout.html
 
 
-async def verify_slide(image: Path, slide: SlideSpec) -> SlideVerdict:
+async def verify_slide(
+    image: Path, slide: SlideSpec, fmt: CanvasFormat = STORY_FORMAT
+) -> SlideVerdict:
     """Check a rendered slide against the design guidelines and its own copy."""
     response = await anthropic_client().messages.parse(
         model=CLAUDE_DESCRIBE_MODEL,
@@ -510,11 +517,12 @@ async def verify_slide(image: Path, slide: SlideSpec) -> SlideVerdict:
                             "- the panel spans the full width edge to edge "
                             "instead of being inset from both sides\n"
                             f"- the text block is taller than about a quarter of "
-                            f"the frame ({TEXT_BLOCK_MAX_H}px of {CANVAS_H}px)\n"
+                            f"the frame ({fmt.text_block_max_h}px of "
+                            f"{fmt.height}px)\n"
                             "- an opaque band sits across the middle of the "
                             "image, hiding a large part of the photograph\n"
                             "- text is cut off, overflowing, or overlapping itself\n"
-                            "- text sits in the top 250px or bottom 250px\n"
+                            f"- text sits outside y={fmt.safe_top}..{fmt.safe_bottom}px\n"
                             "- text is unreadable against the background\n"
                             "- the copy shown differs from the copy above\n"
                             "- the layout looks careless or unbalanced\n\n"

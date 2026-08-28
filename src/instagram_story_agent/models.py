@@ -88,3 +88,4 @@ class Campaign(BaseModel):
     failed_slides: list[tuple[int, str]] = Field(default_factory=list)
     verdicts: list[SlideVerdict] = Field(default_factory=list)
     product_references: list[Path] = Field(default_factory=list)
+    format_name: str = "story"

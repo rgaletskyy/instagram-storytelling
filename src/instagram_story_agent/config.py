@@ -6,6 +6,7 @@ Everything tunable lives here so the rest of the package holds no magic values.
 from __future__ import annotations
 
 import os
+from dataclasses import dataclass
 from pathlib import Path
 
 # --- Paths -------------------------------------------------------------------
@@ -44,7 +45,8 @@ GEMINI_IMAGE_PRO_MODEL = "gemini-3-pro-image"
 GEMINI_TRANSCRIBE_MODEL = "gemini-3.5-transcribe"
 
 # --- Canvas ------------------------------------------------------------------
-# From src/resources/story-design-guidelines.md section 1.
+# Story dimensions come from src/resources/story-design-guidelines.md section 1.
+# A post is the same design language on a square artboard.
 
 CANVAS_W = 1080
 CANVAS_H = 1920
@@ -56,8 +58,9 @@ SCREENSHOT_QUALITY = 92
 
 # The text block, including whatever card or scrim sits behind it, gets a budget.
 # Left unbounded the layout model reaches for a full-bleed band that swallows a
-# fifth of the frame and lands on the subject.
-TEXT_BLOCK_MAX_H = 520          # px, ~27% of canvas height
+# fifth of the frame and lands on the subject. Held as a fraction so it scales
+# with the artboard rather than being a story-shaped number.
+TEXT_BLOCK_MAX_FRACTION = 0.27
 HEADLINE_MAX_PX = 64
 BODY_MAX_PX = 34
 
@@ -70,6 +73,55 @@ GOOGLE_FONTS_HREF = (
     "https://fonts.googleapis.com/css2"
     "?family=Bitter:wght@700;800&family=Noto+Sans:wght@400;600;700&display=swap"
 )
+
+
+@dataclass(frozen=True)
+class CanvasFormat:
+    """An artboard: its size, the aspect Gemini renders, and where text may go."""
+
+    name: str
+    width: int
+    height: int
+    aspect_ratio: str
+    safe_top: int
+    safe_bottom: int
+    safe_note: str
+
+    @property
+    def text_block_max_h(self) -> int:
+        return int(self.height * TEXT_BLOCK_MAX_FRACTION)
+
+
+STORY_FORMAT = CanvasFormat(
+    name="story",
+    width=CANVAS_W,
+    height=CANVAS_H,
+    aspect_ratio="9:16",
+    safe_top=SAFE_TOP,
+    safe_bottom=SAFE_BOTTOM,
+    safe_note=(
+        "the top and bottom bands are covered by Instagram's progress bar, "
+        "avatar and reply field"
+    ),
+)
+
+# Instagram feed posts are square and carry none of the story UI, so the only
+# reserved space is the margin itself.
+POST_FORMAT = CanvasFormat(
+    name="post",
+    width=1080,
+    height=1080,
+    aspect_ratio="1:1",
+    safe_top=SIDE_MARGIN,
+    safe_bottom=1080 - SIDE_MARGIN,
+    safe_note=(
+        "a feed post has no story UI over it, so only the margin is reserved; "
+        "keep clear of the very edge so nothing is clipped in a crop"
+    ),
+)
+
+FORMATS = {f.name: f for f in (STORY_FORMAT, POST_FORMAT)}
+
 
 # --- Story shape -------------------------------------------------------------
 # src/resources/story-telling-rules.md section 2.

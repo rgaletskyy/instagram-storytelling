@@ -12,7 +12,7 @@ from pathlib import Path
 
 from playwright.async_api import async_playwright
 
-from .config import CANVAS_H, CANVAS_W, SCREENSHOT_QUALITY
+from .config import SCREENSHOT_QUALITY, STORY_FORMAT, CanvasFormat
 
 _FENCE_RE = re.compile(r"^\s*```(?:html)?\s*|\s*```\s*$", re.IGNORECASE)
 
@@ -22,8 +22,13 @@ def clean_html(raw: str) -> str:
     return _FENCE_RE.sub("", raw or "").strip()
 
 
-async def screenshot(html: str, out_path: Path, base_dir: Path) -> Path:
-    """Write `html` beside its assets and screenshot it at story dimensions.
+async def screenshot(
+    html: str,
+    out_path: Path,
+    base_dir: Path,
+    fmt: CanvasFormat = STORY_FORMAT,
+) -> Path:
+    """Write `html` beside its assets and screenshot it at the format's size.
 
     The document is written into base_dir so relative asset references such as
     background.jpg resolve, and loaded over file:// rather than set_content --
@@ -38,7 +43,7 @@ async def screenshot(html: str, out_path: Path, base_dir: Path) -> Path:
         browser = await pw.chromium.launch()
         try:
             page = await browser.new_page(
-                viewport={"width": CANVAS_W, "height": CANVAS_H},
+                viewport={"width": fmt.width, "height": fmt.height},
                 device_scale_factor=1,
             )
             await page.goto(page_file.as_uri(), wait_until="networkidle")
@@ -48,7 +53,7 @@ async def screenshot(html: str, out_path: Path, base_dir: Path) -> Path:
                 path=str(out_path),
                 type="jpeg",
                 quality=SCREENSHOT_QUALITY,
-                clip={"x": 0, "y": 0, "width": CANVAS_W, "height": CANVAS_H},
+                clip={"x": 0, "y": 0, "width": fmt.width, "height": fmt.height},
             )
         finally:
             await browser.close()

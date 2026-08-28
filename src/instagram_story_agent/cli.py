@@ -6,9 +6,9 @@ import argparse
 import asyncio
 import sys
 
-from .config import DEFAULT_SLIDES
+from .config import DEFAULT_SLIDES, FORMATS, STORY_FORMAT
 from .ffmpeg import FFmpegMissingError
-from .workflow import create_story_campaign
+from .workflow import create_campaign
 
 
 def main() -> int:
@@ -23,6 +23,12 @@ def main() -> int:
         "--topic", default=None, help="override content/input/topic.md"
     )
     parser.add_argument(
+        "--format",
+        choices=sorted(FORMATS),
+        default=STORY_FORMAT.name,
+        help="story = 1080x1920 (9:16), post = 1080x1080 (1:1)",
+    )
+    parser.add_argument(
         "--no-verify",
         action="store_true",
         help="skip the design verification pass on each rendered slide",
@@ -31,10 +37,11 @@ def main() -> int:
 
     try:
         campaign = asyncio.run(
-            create_story_campaign(
+            create_campaign(
                 topic=args.topic,
                 slide_count=args.slides,
                 verify=not args.no_verify,
+                fmt=FORMATS[args.format],
             )
         )
     except FFmpegMissingError as exc:
@@ -44,7 +51,7 @@ def main() -> int:
         print(f"error: {exc}", file=sys.stderr)
         return 1
 
-    print(f"saved to {campaign.output_dir}")
+    print(f"saved to {campaign.output_dir}  [{campaign.format_name}]")
     print(f"slides: {len(campaign.slide_paths)}/{len(campaign.script.slides)}")
     if campaign.missing_skus:
         print(f"SKUs not in the catalogue: {', '.join(campaign.missing_skus)}")

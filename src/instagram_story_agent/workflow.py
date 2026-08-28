@@ -14,15 +14,19 @@ from pathlib import Path
 from . import ffmpeg, llm, slide_html
 from .config import (
     DEFAULT_SLIDES,
+    FORMATS,
     GEMINI_IMAGE_PRO_MODEL,
     IMAGE_SUFFIXES,
     INPUT_DIR,
     MAX_SLIDES,
     MIN_SLIDES,
     OUTPUT_DIR,
+    POST_FORMAT,
+    STORY_FORMAT,
     TOPIC_FILE,
     VERIFY_RETRIES,
     VIDEO_SUFFIXES,
+    CanvasFormat,
 )
 from .models import (
     Campaign,
@@ -44,7 +48,7 @@ def _slug(text: str, limit: int = 40) -> str:
     return (slug[:limit].rstrip("-")) or "story"
 
 
-def _new_project_dir(brief: str) -> Path:
+def _new_project_dir(brief: str, fmt: CanvasFormat = STORY_FORMAT) -> Path:
     """A fresh folder per run.
 
     The timestamp only has second resolution, so two runs started in the same
@@ -52,7 +56,7 @@ def _new_project_dir(brief: str) -> Path:
     the name is free -- a campaign must never clobber an earlier one.
     """
     stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
-    base = OUTPUT_DIR / f"{_slug(brief)}-{stamp}"
+    base = OUTPUT_DIR / f"{_slug(brief)}-{fmt.name}-{stamp}"
     candidate = base
     counter = 2
     while candidate.exists():
@@ -165,6 +169,7 @@ async def _build_slide(
     model: str,
     verify: bool = True,
     references: list[Path] | None = None,
+    fmt: CanvasFormat = STORY_FORMAT,
 ) -> tuple[Path, SlideVerdict | None]:
     """Background -> HTML layout -> browser screenshot -> verification.
 
@@ -180,6 +185,7 @@ async def _build_slide(
         model=model,
         # Only slides that actually feature the product get the packshot.
         references=references if slide.shows_product else None,
+        aspect_ratio=fmt.aspect_ratio,
     )
 
     out_path = out_dir / f"{slide.index}.jpg"
@@ -187,11 +193,11 @@ async def _build_slide(
     issues: list[str] = []
 
     for attempt in range(VERIFY_RETRIES + 1):
-        html = await llm.generate_slide_html(slide, background, issues or None)
-        await slide_html.screenshot(html, out_path, work)
+        html = await llm.generate_slide_html(slide, background, issues or None, fmt)
+        await slide_html.screenshot(html, out_path, work, fmt)
         if not verify:
             break
-        verdict = await llm.verify_slide(out_path, slide)
+        verdict = await llm.verify_slide(out_path, slide, fmt)
         if verdict.passed:
             break
         issues = verdict.issues
@@ -216,18 +222,24 @@ def save_project(campaign: Campaign) -> Path:
     payload["failed_slides"] = [list(f) for f in campaign.failed_slides]
     payload["verdicts"] = [v.model_dump(mode="json") for v in campaign.verdicts]
     payload["product_references"] = [str(p) for p in campaign.product_references]
+    payload["format"] = campaign.format_name
     (out_dir / "script.json").write_text(
         json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8"
     )
     return out_dir
 
 
-async def create_story_campaign(
+async def create_campaign(
     topic: str | None = None,
     slide_count: int = DEFAULT_SLIDES,
     verify: bool = True,
+    fmt: CanvasFormat = STORY_FORMAT,
 ) -> Campaign:
-    """Brief plus input media in, saved project folder out."""
+    """Brief plus input media in, saved project folder out.
+
+    Stories and feed posts run the identical pipeline; only the artboard
+    differs, so the format is threaded through rather than branched on.
+    """
     # Fail fast, before anything is generated or any directory is created.
     if not MIN_SLIDES <= slide_count <= MAX_SLIDES:
         raise ValueError(
@@ -246,7 +258,7 @@ async def create_story_campaign(
     )
     _guard_prompts(script)
 
-    out_dir = _new_project_dir(brief)
+    out_dir = _new_project_dir(brief, fmt)
 
     references = product_references(descriptions)
     results = await asyncio.gather(
@@ -257,6 +269,7 @@ async def create_story_campaign(
                 llm.GEMINI_IMAGE_MODEL,
                 verify=verify,
                 references=references,
+                fmt=fmt,
             )
             for s in script.slides
         ),
@@ -284,6 +297,7 @@ async def create_story_campaign(
         failed_slides=failed,
         verdicts=verdicts,
         product_references=references,
+        format_name=fmt.name,
     )
     save_project(campaign)
     return campaign
@@ -315,7 +329,11 @@ async def regenerate_slide(
         Path(r) for r in payload.get("product_references", []) if Path(r).exists()
     ]
     rendered, _verdict = await _build_slide(
-        revised, out_dir, GEMINI_IMAGE_PRO_MODEL, references=references
+        revised,
+        out_dir,
+        GEMINI_IMAGE_PRO_MODEL,
+        references=references,
+        fmt=FORMATS.get(payload.get("format", "story"), STORY_FORMAT),
     )
 
     # Rewrite only this entry, preserving everything else in the file.
@@ -327,3 +345,21 @@ async def regenerate_slide(
         json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8"
     )
     return rendered
+
+
+async def create_story_campaign(
+    topic: str | None = None,
+    slide_count: int = DEFAULT_SLIDES,
+    verify: bool = True,
+) -> Campaign:
+    """A 9:16 story sequence."""
+    return await create_campaign(topic, slide_count, verify, STORY_FORMAT)
+
+
+async def create_post_campaign(
+    topic: str | None = None,
+    slide_count: int = DEFAULT_SLIDES,
+    verify: bool = True,
+) -> Campaign:
+    """A 1:1 square feed post or carousel."""
+    return await create_campaign(topic, slide_count, verify, POST_FORMAT)

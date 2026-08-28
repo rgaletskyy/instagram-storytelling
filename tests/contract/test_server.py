@@ -9,6 +9,7 @@ from instagram_story_agent.server import mcp
 pytestmark = pytest.mark.contract
 
 EXPECTED_TOOLS = {
+    "create_post_campaign",
     "create_story_campaign",
     "describe_image",
     "describe_video",
@@ -82,3 +83,25 @@ async def test_create_story_campaign_rejects_an_out_of_range_slide_count():
     assert result.is_error
     # The anticipated failure must reach the caller, not a generic message.
     assert "between 3 and 7" in result.content[0].text
+
+
+async def test_both_campaign_formats_are_offered():
+    """Stories and square feed posts are the same pipeline, different artboards."""
+    async with Client(mcp) as client:
+        names = {t.name for t in (await client.list_tools()).tools}
+    assert {"create_story_campaign", "create_post_campaign"} <= names
+
+
+async def test_the_two_campaign_tools_take_the_same_arguments():
+    async with Client(mcp) as client:
+        tools = {t.name: t for t in (await client.list_tools()).tools}
+    story = set(tools["create_story_campaign"].input_schema["properties"])
+    post = set(tools["create_post_campaign"].input_schema["properties"])
+    assert story == post == {"topic", "slide_count", "verify"}
+
+
+async def test_render_and_validate_accept_a_format():
+    async with Client(mcp) as client:
+        tools = {t.name: t for t in (await client.list_tools()).tools}
+    for name in ("render_story_slide", "validate_slide"):
+        assert "format" in tools[name].input_schema["properties"], name

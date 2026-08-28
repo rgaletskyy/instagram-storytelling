@@ -17,6 +17,8 @@ from . import ffmpeg, llm, slide_html, workflow
 from .config import (
     DEFAULT_SLIDES,
     DESIGN_GUIDELINES,
+    FORMATS,
+    STORY_FORMAT,
     STORYTELLING_RULES,
 )
 from .models import Product, SlideSpec
@@ -54,6 +56,19 @@ def _reporting(fn: Callable) -> Callable:
     return wrapper if inspect.iscoroutinefunction(fn) else sync_wrapper
 
 
+def _campaign_payload(campaign) -> dict:
+    """The shape both campaign tools return."""
+    return {
+        "output_dir": str(campaign.output_dir),
+        "format": campaign.format_name,
+        "slides": [str(p) for p in campaign.slide_paths],
+        "script": campaign.script.model_dump(mode="json"),
+        "missing_skus": campaign.missing_skus,
+        "failed_slides": [list(f) for f in campaign.failed_slides],
+        "verdicts": [v.model_dump(mode="json") for v in campaign.verdicts],
+    }
+
+
 # --- Workflow tools ----------------------------------------------------------
 
 
@@ -68,14 +83,26 @@ async def create_story_campaign(
     campaign = await workflow.create_story_campaign(
         topic=topic, slide_count=slide_count, verify=verify
     )
-    return {
-        "output_dir": str(campaign.output_dir),
-        "slides": [str(p) for p in campaign.slide_paths],
-        "script": campaign.script.model_dump(mode="json"),
-        "missing_skus": campaign.missing_skus,
-        "failed_slides": [list(f) for f in campaign.failed_slides],
-        "verdicts": [v.model_dump(mode="json") for v in campaign.verdicts],
-    }
+    return _campaign_payload(campaign)
+
+
+@mcp.tool()
+@_reporting
+async def create_post_campaign(
+    topic: str | None = None,
+    slide_count: int = DEFAULT_SLIDES,
+    verify: bool = True,
+) -> dict:
+    """Same campaign, on a 1:1 square artboard for an Instagram feed post.
+
+    Identical pipeline and brand rules to create_story_campaign -- only the
+    artboard differs: 1080x1080 instead of 1080x1920, and no story UI to keep
+    clear of, so the copy can use more of the frame.
+    """
+    campaign = await workflow.create_post_campaign(
+        topic=topic, slide_count=slide_count, verify=verify
+    )
+    return _campaign_payload(campaign)
 
 
 @mcp.tool()
@@ -162,8 +189,11 @@ async def render_story_slide(
     out_path: str,
     role: str = "solution",
     slide_index: int = 1,
+    format: str = "story",
 ) -> str:
     """Lay a slide out as HTML over a background and screenshot it to a JPG.
+
+    `format` is "story" (1080x1920) or "post" (1080x1080).
 
     The layout model sees the background, so copy is placed around the subject
     rather than stamped at a fixed position.
@@ -175,16 +205,21 @@ async def render_story_slide(
         image_prompt="",
         overlay_text=overlay_text,
     )
-    html = await llm.generate_slide_html(slide, background)
+    fmt = FORMATS.get(format, STORY_FORMAT)
+    html = await llm.generate_slide_html(slide, background, fmt=fmt)
     return str(
-        await slide_html.screenshot(html, Path(out_path), background.parent)
+        await slide_html.screenshot(html, Path(out_path), background.parent, fmt)
     )
 
 
 @mcp.tool()
 @_reporting
 async def validate_slide(
-    image_path: str, overlay_text: str, role: str = "solution", slide_index: int = 1
+    image_path: str,
+    overlay_text: str,
+    role: str = "solution",
+    slide_index: int = 1,
+    format: str = "story",
 ) -> dict:
     """Check a rendered slide against the design guidelines and its own copy."""
     slide = SlideSpec(
@@ -193,7 +228,9 @@ async def validate_slide(
         image_prompt="",
         overlay_text=overlay_text,
     )
-    verdict = await llm.verify_slide(Path(image_path), slide)
+    verdict = await llm.verify_slide(
+        Path(image_path), slide, FORMATS.get(format, STORY_FORMAT)
+    )
     return verdict.model_dump(mode="json")
 
 
@@ -259,7 +296,10 @@ Read both resources first -- they are normative, not background reading:
 
 ## The quick path
 
-Call `create_story_campaign(topic={topic!r}, slide_count={slide_count})`. It runs
+Call `create_story_campaign(topic={topic!r}, slide_count={slide_count})` for a
+9:16 story, or `create_post_campaign(...)` for a 1:1 square feed post. Both take
+the same arguments and run the same pipeline -- only the artboard differs, so
+pick by where the user intends to publish. It runs
 everything -- product lookup, image description, script, backgrounds, layout,
 rendering and verification -- and saves a project folder. Report the output
 folder, any slides that failed, and any verification verdict that did not pass.
@@ -288,14 +328,15 @@ Write the script:
   cta, and it goes last.
 
 Build one slide at a time:
-- `generate_image(prompt, out_path, references)` -- the 9:16 background. On any
+- `generate_image(prompt, out_path, references)` -- the background. It renders
+  9:16 by default; the campaign tools set the aspect to match their format. On any
   slide where `shows_product` is true, pass the real product photograph in
   `references`, and describe the SETTING in `prompt`, never the label. Without a
   reference the model invents packaging that looks plausible and is wrong. Never
   put a URL or web address in `prompt`.
-- `render_story_slide(background_path, overlay_text, out_path, role, slide_index)`
-  -- lays the copy out over that background in HTML and screenshots it at
-  1080x1920. The layout is composed with the background in view, so the copy is
+- `render_story_slide(background_path, overlay_text, out_path, role, slide_index,
+  format)` -- lays the copy out over that background in HTML and screenshots it.
+  `format` is "story" (1080x1920) or "post" (1080x1080). The layout is composed with the background in view, so the copy is
   placed around the subject rather than at a fixed position.
 - `validate_slide(image_path, overlay_text, role, slide_index)` -- reviews the
   rendered slide against the design guidelines. Returns `passed` plus specific
@@ -309,8 +350,8 @@ Build one slide at a time:
 - The product page URL belongs in the script and the link sticker, never in an
   image prompt and never rendered into a slide.
 - Copy goes in the language of the brief.
-- Keep text inside y=250..1670; the top and bottom bands are covered by
-  Instagram's own UI.
+- On a story, keep text inside y=250..1670 -- Instagram's own UI covers the top
+  and bottom bands. A square post has no such UI, so only the margin is reserved.
 - Interactive stickers are notes for the human posting, not drawn on the image.
 
 Input files live in content/input/, finished projects in content/output/."""

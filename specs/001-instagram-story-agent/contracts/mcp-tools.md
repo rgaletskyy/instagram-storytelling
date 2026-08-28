@@ -25,6 +25,18 @@ async def create_story_campaign(
 Returns `{output_dir, slides: [path], script: {...}, missing_skus: [...], failed_slides: [[index, error]], verdicts: [{index, passed, issues, notes}]}`.
 Errors: `slide_count` outside 3–7 → rejected before any generation, no partial project.
 
+### `create_post_campaign`
+```python
+async def create_post_campaign(
+    topic: str | None = None,
+    slide_count: int = 5,
+    verify: bool = True,
+) -> dict
+```
+Identical to `create_story_campaign` but on a **1:1 square artboard** (1080×1080) for an Instagram feed post. Same pipeline, same brand rules, same return shape; only the format differs. A feed post carries none of the story UI, so the safe area is the margin rather than `y = 250…1670`.
+
+Both campaign tools return a `format` field naming the artboard used, and the format is persisted in `script.json` so `regenerate_slide` re-renders at the right size.
+
 ### `get_product`
 ```python
 def get_product(skus: list[str]) -> dict
