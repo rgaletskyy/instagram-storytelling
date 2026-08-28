@@ -24,7 +24,7 @@ from .models import Product, SlideSpec
 mcp = MCPServer(
     name="instagram-story-agent",
     title="Instagram Story Telling Agent",
-    description="Builds Instagram story campaigns from local images and a brief.",
+    description="Builds Instagram story campaigns from local images or vide and a brief.",
     version="0.1.0",
 )
 
@@ -118,9 +118,22 @@ async def describe_image(image_path: str) -> str:
 
 @mcp.tool()
 @_reporting
-async def generate_image(prompt: str, out_path: str) -> str:
-    """Generate a 9:16 background image. The prompt must not contain a URL."""
-    return str(await llm.generate_image(prompt, out_path))
+async def generate_image(
+    prompt: str, out_path: str, references: list[str] | None = None
+) -> str:
+    """Generate a 9:16 background image. The prompt must not contain a URL.
+
+    Pass `references` -- paths to real product photographs -- on any image that
+    shows the product. Without them the model invents plausible but wrong
+    packaging. Describe the setting in `prompt`, not the label.
+    """
+    return str(
+        await llm.generate_image(
+            prompt,
+            out_path,
+            references=[Path(r) for r in references] if references else None,
+        )
+    )
 
 
 @mcp.tool()
@@ -228,7 +241,7 @@ def design_guidelines() -> str:
     mime_type="text/markdown",
 )
 def storytelling_rules() -> str:
-    """Rules for what a story says and in what order."""
+    """Rules for what a story says and in what order. Basic recommendations how to build good story telling."""
     return STORYTELLING_RULES.read_text(encoding="utf-8")
 
 
@@ -237,14 +250,70 @@ def storytelling_rules() -> str:
 
 @mcp.prompt()
 def story_campaign(topic: str, slide_count: int = DEFAULT_SLIDES) -> str:
-    """Guide a chat client through building a campaign."""
-    return (
-        "Read content://story-telling-rules.md and "
-        "content://story-design-guidelines.md first, then call "
-        f"create_story_campaign with topic={topic!r} and "
-        f"slide_count={slide_count}. Report the output folder and any slides "
-        "that failed."
-    )
+    """Guide a chat client through building a instagram story campaign / story telling."""
+    return f"""Build an Instagram story campaign about: {topic!r} ({slide_count} slides).
+
+Read both resources first -- they are normative, not background reading:
+- content://story-telling-rules.md   what the story says, and in what order
+- content://story-design-guidelines.md   how a slide must look
+
+## The quick path
+
+Call `create_story_campaign(topic={topic!r}, slide_count={slide_count})`. It runs
+everything -- product lookup, image description, script, backgrounds, layout,
+rendering and verification -- and saves a project folder. Report the output
+folder, any slides that failed, and any verification verdict that did not pass.
+Pass `verify=False` to skip the design review pass and finish roughly twice as
+fast.
+
+## The step-by-step path
+
+Use these when the user wants to steer each stage, inspect intermediate results,
+or redo one piece without regenerating the campaign. Every tool works on its own,
+so you can start anywhere and stop anywhere.
+
+Understand the inputs:
+- `get_product(skus)` -- look SKUs up in the catalogue. SKUs are written inline in
+  the brief, e.g. "Face It up (BO-FIU150)". Returns name, price, description,
+  image URL and the product page URL, plus any SKU that was not found.
+- `describe_image(image_path)` -- what a supplied photo actually shows. Run this
+  on each file in content/input/ before writing copy.
+- `describe_video(video_path)` / `transcribe_video(video_path)` -- frames plus
+  spoken content, when a clip was supplied. These need ffmpeg; nothing else does.
+
+Write the script:
+- `generate_storytelling_script(topic, descriptions, products, slide_count)` --
+  returns a slide per entry with `image_prompt`, `overlay_text`, `ig_notes`,
+  `role` and `shows_product`. Between 3 and 7 slides; hook first, exactly one
+  cta, and it goes last.
+
+Build one slide at a time:
+- `generate_image(prompt, out_path, references)` -- the 9:16 background. On any
+  slide where `shows_product` is true, pass the real product photograph in
+  `references`, and describe the SETTING in `prompt`, never the label. Without a
+  reference the model invents packaging that looks plausible and is wrong. Never
+  put a URL or web address in `prompt`.
+- `render_story_slide(background_path, overlay_text, out_path, role, slide_index)`
+  -- lays the copy out over that background in HTML and screenshots it at
+  1080x1920. The layout is composed with the background in view, so the copy is
+  placed around the subject rather than at a fixed position.
+- `validate_slide(image_path, overlay_text, role, slide_index)` -- reviews the
+  rendered slide against the design guidelines. Returns `passed` plus specific
+  `issues`. Worth calling after any manual render.
+- `regenerate_slide(project_dir, slide_index, comment)` -- redo one slide of a
+  saved campaign from a written note, leaving the others untouched.
+- `save_project(output_dir)` -- confirm where a campaign was written.
+
+## Things that are easy to get wrong
+
+- The product page URL belongs in the script and the link sticker, never in an
+  image prompt and never rendered into a slide.
+- Copy goes in the language of the brief.
+- Keep text inside y=250..1670; the top and bottom bands are covered by
+  Instagram's own UI.
+- Interactive stickers are notes for the human posting, not drawn on the image.
+
+Input files live in content/input/, finished projects in content/output/."""
 
 
 def main() -> int:

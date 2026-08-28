@@ -7,10 +7,22 @@ from instagram_story_agent.products import extract_skus, get_products, strip_htm
 
 pytestmark = pytest.mark.unit
 
+# A brief in the shape the app actually receives. Inline rather than read from
+# content/input/, which is gitignored and absent from a fresh clone.
+REAL_BRIEF = (
+    "Зроби сторітелнг про проблему слізних доріжок у собак. "
+    "Запропонуй і розкажи про новий продукт Шампунь пінка Face It up (BO-FIU150)"
+)
 
-def test_extracts_sku_from_the_real_brief():
-    skus = extract_skus(TOPIC_FILE.read_text(encoding="utf-8"))
-    assert "BO-FIU150" in skus
+
+def test_extracts_sku_from_a_real_brief():
+    assert extract_skus(REAL_BRIEF) == ["BO-FIU150"]
+
+
+@pytest.mark.skipif(not TOPIC_FILE.exists(), reason="no local brief supplied")
+def test_the_local_brief_still_parses():
+    """Only runs when the user has content in content/input/."""
+    assert isinstance(extract_skus(TOPIC_FILE.read_text(encoding="utf-8")), list)
 
 
 def test_extracts_sku_from_parenthesised_text():

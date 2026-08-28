@@ -44,11 +44,13 @@ Returns a `CampaignScript`. Uses `claude-opus-5` with `story-telling-rules.md` a
 
 ### `generate_image`
 ```python
-async def generate_image(prompt: str, out_path: str) -> str
+async def generate_image(
+    prompt: str, out_path: str, references: list[str] | None = None
+) -> str
 ```
 Gemini image model from config, `aspect_ratio="9:16"`, `image_size="2K"`. Returns the written path (FR-008).
 **The caller must not put a URL in `prompt`** (FR-008a).
-Inside a campaign the workflow additionally passes the user's product photograph as a reference on slides flagged `shows_product`, so the real container is reproduced rather than invented (FR-008b).
+Pass `references` — paths to real product photographs — on any image showing the product, so the real container is reproduced rather than invented (FR-008b). The campaign workflow does this automatically for slides flagged `shows_product`; step-by-step callers must pass them explicitly.
 
 ### `render_story_slide`
 ```python
@@ -125,7 +127,7 @@ Both are served verbatim.
 
 | Name | Arguments | Purpose |
 |---|---|---|
-| `story_campaign` | `topic: str`, `slide_count: int = 5` | Guides a chat client through a campaign: read both resources, then call `create_story_campaign`. |
+| `story_campaign` | `topic: str`, `slide_count: int = 5` | Guides a chat client through a campaign. Covers both routes: the one-shot `create_story_campaign`, and the atomic tools (`get_product`, `describe_image`, `generate_storytelling_script`, `generate_image`, `render_story_slide`, `validate_slide`, `regenerate_slide`) for building a story step by step, with the constraints that are easy to get wrong. |
 
 ---
 
