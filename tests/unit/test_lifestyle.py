@@ -80,10 +80,18 @@ def test_three_images_is_the_default(stubbed):
 
 
 def test_the_requested_count_is_honoured(stubbed):
+    """Follows the configured ceiling rather than a hardcoded number."""
+    asked = MAX_LIFESTYLE_IMAGES
     result = asyncio.run(
-        workflow.create_lifestyle_content(topic="тема", image_count=5)
+        workflow.create_lifestyle_content(topic="тема", image_count=asked)
     )
-    assert len(result["images"]) == 5
+    assert len(result["images"]) == asked
+
+
+def test_the_default_is_within_the_allowed_range(stubbed):
+    from instagram_marketing_agent.config import DEFAULT_LIFESTYLE_IMAGES
+
+    assert 1 <= DEFAULT_LIFESTYLE_IMAGES <= MAX_LIFESTYLE_IMAGES
 
 
 @pytest.mark.parametrize("count", [0, -1, MAX_LIFESTYLE_IMAGES + 1])
