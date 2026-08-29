@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import re
 import shutil
 import tempfile
@@ -46,6 +47,8 @@ from .products import (
     get_products,
     local_product_photos,
 )
+
+logger = logging.getLogger(__name__)
 
 _URL_RE = re.compile(r"(https?://|www\.)", re.IGNORECASE)
 
@@ -108,7 +111,15 @@ async def describe_video(video: Path, frame_count: int = 8) -> MediaDescription:
             *(llm.describe_image(f) for f in frames), return_exceptions=True
         )
         audio = await ffmpeg.extract_audio(video, tmp_dir / "audio.wav")
-        transcript = await llm.transcribe_audio(audio) if audio else ""
+        transcript = ""
+        if audio:
+            try:
+                transcript = await llm.transcribe_audio(audio)
+            except Exception as exc:  # noqa: BLE001 - transcription is optional
+                # A clip still describes visually without its spoken content, so
+                # a transcription failure must not sink the whole campaign.
+                transcript = ""
+                logger.warning("could not transcribe %s: %s", video.name, exc)
 
     described = [t for t in frame_texts if isinstance(t, str)]
     merged = "\n".join(f"Frame {i}: {t}" for i, t in enumerate(described, 1))

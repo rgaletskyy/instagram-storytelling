@@ -372,14 +372,61 @@ def _guidelines() -> str:
     return DESIGN_GUIDELINES.read_text(encoding="utf-8")
 
 
+# Claude's vision API accepts a fixed set of formats and caps each image at
+# 5MB. Phone photos are routinely HEIC and well over that, so anything the API
+# will not take is converted and downscaled on the way in.
+_MAX_IMAGE_BYTES = 4_500_000
+_MAX_IMAGE_EDGE = 2000
+
+
+# Magic bytes, because file extensions lie: a phone export named .png is
+# routinely a JPEG, and the API rejects a mismatched media type outright.
+_MAGIC = (
+    (b"\xff\xd8\xff", "image/jpeg"),
+    (b"\x89PNG\r\n\x1a\n", "image/png"),
+    (b"GIF8", "image/gif"),
+)
+
+
+def _sniff(raw: bytes) -> str:
+    """The real media type of these bytes, or "" when unrecognised."""
+    for signature, media_type in _MAGIC:
+        if raw.startswith(signature):
+            return media_type
+    if raw[:4] == b"RIFF" and raw[8:12] == b"WEBP":
+        return "image/webp"
+    return ""
+
+
+def _api_ready(path: Path) -> tuple[bytes, str]:
+    """Return image bytes the API will accept, converting or shrinking if needed."""
+    raw = path.read_bytes()
+    media_type = _sniff(raw)
+    if media_type and len(raw) <= _MAX_IMAGE_BYTES:
+        return raw, media_type
+
+    import io
+
+    import pillow_heif
+    from PIL import Image
+
+    pillow_heif.register_heif_opener()
+    with Image.open(path) as im:
+        im = im.convert("RGB")
+        im.thumbnail((_MAX_IMAGE_EDGE, _MAX_IMAGE_EDGE), Image.LANCZOS)
+        buffer = io.BytesIO()
+        im.save(buffer, "JPEG", quality=88)
+    return buffer.getvalue(), "image/jpeg"
+
+
 def _image_block(path: Path) -> dict:
-    media_type = mimetypes.guess_type(path.name)[0] or "image/jpeg"
+    data, media_type = _api_ready(path)
     return {
         "type": "image",
         "source": {
             "type": "base64",
             "media_type": media_type,
-            "data": base64.standard_b64encode(path.read_bytes()).decode("utf-8"),
+            "data": base64.standard_b64encode(data).decode("utf-8"),
         },
     }
 

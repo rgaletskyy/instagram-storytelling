@@ -370,3 +370,38 @@ def test_wordless_slides_are_dropped_so_a_real_one_takes_their_place(stubbed, mo
     assert all(s.overlay_text.strip() for s in campaign.script.slides)
     assert [s.overlay_text for s in campaign.script.slides] == ["hook", "t", "buy"]
     assert real is not None
+
+
+def test_a_failed_transcription_does_not_sink_the_campaign(monkeypatch, tmp_path):
+    """The clip still describes visually without its spoken content."""
+    from instagram_story_agent import ffmpeg
+
+    video = tmp_path / "clip.mov"
+    video.write_bytes(b"mov")
+
+    async def fake_frames(v, out_dir, count=8):
+        out_dir.mkdir(parents=True, exist_ok=True)
+        frame = out_dir / "frame_01.jpg"
+        frame.write_bytes(b"jpeg")
+        return [frame]
+
+    async def fake_audio(v, out_path):
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        out_path.write_bytes(b"wav")
+        return out_path
+
+    async def fake_describe(_path):
+        return "a frame"
+
+    async def exploding_transcribe(_audio):
+        raise RuntimeError("429 RESOURCE_EXHAUSTED")
+
+    monkeypatch.setattr(ffmpeg, "extract_frames", fake_frames)
+    monkeypatch.setattr(ffmpeg, "extract_audio", fake_audio)
+    monkeypatch.setattr(llm, "describe_image", fake_describe)
+    monkeypatch.setattr(llm, "transcribe_audio", exploding_transcribe)
+
+    described = asyncio.run(workflow.describe_video(video))
+    assert described.kind == "video"
+    assert "a frame" in described.description
+    assert described.transcript is None

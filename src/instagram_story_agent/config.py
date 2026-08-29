@@ -26,7 +26,10 @@ DESIGN_GUIDELINES = RESOURCES_DIR / "story-design-guidelines.md"
 STORYTELLING_RULES = RESOURCES_DIR / "story-telling-rules.md"
 LIFESTYLE_BRIEF = RESOURCES_DIR / "lifestyle-content-brief.md"
 
-IMAGE_SUFFIXES = {".jpg", ".jpeg", ".png", ".webp"}
+# .heic/.heif come straight off an iPhone. Claude's vision API does not
+# accept them, so they are converted to JPEG before being described.
+IMAGE_SUFFIXES = {".jpg", ".jpeg", ".png", ".webp", ".heic", ".heif"}
+API_IMAGE_SUFFIXES = {".jpg", ".jpeg", ".png", ".webp", ".gif"}
 VIDEO_SUFFIXES = {".mp4", ".mov", ".m4v", ".avi"}
 
 # --- Credentials -------------------------------------------------------------

@@ -27,6 +27,10 @@ cp .env.example .env   # then fill in the two keys
 Put your source photos and a `topic.md` brief in `content/input/`; results land in
 `content/output/`. Both folders are gitignored — only the app's own code is tracked.
 
+Photos may be JPEG, PNG, WebP or **HEIC** straight off a phone; HEIC is converted and
+oversized images are downscaled before they reach the vision API. Video (`.mov`, `.mp4`)
+is sampled for frames and transcribed, and needs ffmpeg.
+
 ## Usage
 
 ```bash
