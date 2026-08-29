@@ -42,7 +42,12 @@ Thumbs.db
 src/resources/products.xlsx
 
 # Campaign content: source photos and generated stories stay local.
-# The folders are kept so the app has somewhere to read from and write to.
+# Everything under content/ is ignored, so a new working folder cannot be
+# committed by accident; only the two .gitkeep files are kept, so the app has
+# somewhere to read from and write to.
+content/*
+!content/input/
+!content/output/
 content/input/*
 content/output/*
 !content/input/.gitkeep
