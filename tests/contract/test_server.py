@@ -3,8 +3,8 @@
 import pytest
 from mcp import Client
 
-from instagram_story_agent.client import _payload
-from instagram_story_agent.server import mcp
+from instagram_marketing_agent.client import _payload
+from instagram_marketing_agent.server import mcp
 
 pytestmark = pytest.mark.contract
 

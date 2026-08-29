@@ -5,9 +5,9 @@ import json
 
 import pytest
 
-from instagram_story_agent import llm, slide_html, workflow
-from instagram_story_agent.config import LIFESTYLE_FORMAT, MAX_LIFESTYLE_IMAGES
-from instagram_story_agent.models import (
+from instagram_marketing_agent import llm, slide_html, workflow
+from instagram_marketing_agent.config import LIFESTYLE_FORMAT, MAX_LIFESTYLE_IMAGES
+from instagram_marketing_agent.models import (
     LifestyleSet,
     LifestyleShot,
     Product,

@@ -9,8 +9,8 @@ import json
 
 import pytest
 
-from instagram_story_agent import llm, slide_html, workflow
-from instagram_story_agent.models import (
+from instagram_marketing_agent import llm, slide_html, workflow
+from instagram_marketing_agent.models import (
     CampaignScript,
     MediaDescription,
     SlideSpec,
@@ -45,7 +45,7 @@ def stubbed(monkeypatch, tmp_path):
     monkeypatch.setattr(workflow, "OUTPUT_DIR", tmp_path)
 
     async def fake_inspect(_path):
-        from instagram_story_agent.llm import _ImageDescription
+        from instagram_marketing_agent.llm import _ImageDescription
 
         return _ImageDescription(description="a description", shows_product=True)
 
@@ -213,7 +213,7 @@ def test_verification_can_be_skipped(stubbed, monkeypatch):
 
 
 def test_only_product_photos_are_used_as_references(stubbed):
-    from instagram_story_agent.models import MediaDescription
+    from instagram_marketing_agent.models import MediaDescription
 
     described = [
         MediaDescription(path=stubbed / "a.png", kind="image", description="d",
@@ -226,7 +226,7 @@ def test_only_product_photos_are_used_as_references(stubbed):
 
 
 def test_reference_count_is_capped(stubbed):
-    from instagram_story_agent.models import MediaDescription
+    from instagram_marketing_agent.models import MediaDescription
 
     described = [
         MediaDescription(path=stubbed / f"{i}.png", kind="image", description="d",
@@ -274,7 +274,7 @@ def test_references_are_persisted_for_later_revisions(stubbed):
 
 def test_extra_slides_are_trimmed_to_the_requested_count():
     """The script model has returned six slides for a request of five."""
-    from instagram_story_agent.llm import fit_to_count
+    from instagram_marketing_agent.llm import fit_to_count
 
     slides = [
         SlideSpec(index=1, role="hook", image_prompt="a", overlay_text="1"),
@@ -291,7 +291,7 @@ def test_extra_slides_are_trimmed_to_the_requested_count():
 
 
 def test_the_cta_always_ends_the_script():
-    from instagram_story_agent.llm import fit_to_count
+    from instagram_marketing_agent.llm import fit_to_count
 
     slides = [
         SlideSpec(index=1, role="cta", image_prompt="a", overlay_text="cta"),
@@ -302,7 +302,7 @@ def test_the_cta_always_ends_the_script():
 
 
 def test_repeats_fill_the_gap_when_roles_are_scarce():
-    from instagram_story_agent.llm import fit_to_count
+    from instagram_marketing_agent.llm import fit_to_count
 
     slides = [
         SlideSpec(index=1, role="hook", image_prompt="a", overlay_text="1"),
@@ -313,7 +313,7 @@ def test_repeats_fill_the_gap_when_roles_are_scarce():
 
 
 def test_too_few_slides_fails_before_any_image_is_generated():
-    from instagram_story_agent.llm import fit_to_count
+    from instagram_marketing_agent.llm import fit_to_count
 
     slides = [
         SlideSpec(index=1, role="hook", image_prompt="a", overlay_text="1"),
@@ -325,7 +325,7 @@ def test_too_few_slides_fails_before_any_image_is_generated():
 
 def test_a_slide_with_no_copy_is_never_delivered():
     """The script model has returned a slide with an empty overlay_text."""
-    from instagram_story_agent.llm import fit_to_count
+    from instagram_marketing_agent.llm import fit_to_count
 
     slides = [
         SlideSpec(index=1, role="hook", image_prompt="a", overlay_text="   "),
@@ -350,7 +350,7 @@ def test_wordless_slides_are_dropped_so_a_real_one_takes_their_place(stubbed, mo
             },
         )()
 
-    from instagram_story_agent import llm as _llm
+    from instagram_marketing_agent import llm as _llm
 
     real = _llm.generate_script
 
@@ -374,7 +374,7 @@ def test_wordless_slides_are_dropped_so_a_real_one_takes_their_place(stubbed, mo
 
 def test_a_failed_transcription_does_not_sink_the_campaign(monkeypatch, tmp_path):
     """The clip still describes visually without its spoken content."""
-    from instagram_story_agent import ffmpeg
+    from instagram_marketing_agent import ffmpeg
 
     video = tmp_path / "clip.mov"
     video.write_bytes(b"mov")
@@ -425,7 +425,7 @@ def test_a_partial_failure_keeps_the_photos_that_worked(monkeypatch, tmp_path):
         (tmp_path / name).write_bytes(b"png")
 
     async def flaky(path):
-        from instagram_story_agent.llm import _ImageDescription
+        from instagram_marketing_agent.llm import _ImageDescription
 
         if path.name == "a.png":
             raise RuntimeError("transient")

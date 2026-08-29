@@ -1,4 +1,4 @@
-# instagram-story-agent
+# instagram-marketing-agent
 
 Turns local images and a markdown brief into ready-to-post Instagram story slides.
 
@@ -36,14 +36,14 @@ spread across the whole clip.
 
 ```bash
 # from code
-uv run instagram-story-agent --slides 5                # 9:16 story
-uv run instagram-story-agent --slides 5 --format post  # 1:1 square feed post
-uv run instagram-story-agent --slides 5 --no-verify    # skip the design review pass
-uv run instagram-story-agent --lifestyle               # 3 lifestyle product photos (4:5)
-uv run instagram-story-agent --lifestyle 6             # ...or however many
+uv run instagram-marketing-agent --slides 5                # 9:16 story
+uv run instagram-marketing-agent --slides 5 --format post  # 1:1 square feed post
+uv run instagram-marketing-agent --slides 5 --no-verify    # skip the design review pass
+uv run instagram-marketing-agent --lifestyle               # 3 lifestyle product photos (4:5)
+uv run instagram-marketing-agent --lifestyle 6             # ...or however many
 
 # as an MCP server (stdio)
-uv run python -m instagram_story_agent.server
+uv run python -m instagram_marketing_agent.server
 ```
 
 ## Models
@@ -121,4 +121,4 @@ Two places where the implementation knowingly differs from the source documents:
    from Google Fonts and the guidelines' mandated typefaces are used directly. This needs network access at
    render time.
 
-See `specs/001-instagram-story-agent/` for the full spec, plan, and research.
+See `specs/001-instagram-marketing-agent/` for the full spec, plan, and research.

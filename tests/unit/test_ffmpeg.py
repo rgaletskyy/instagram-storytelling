@@ -5,8 +5,8 @@ from pathlib import Path
 
 import pytest
 
-from instagram_story_agent import ffmpeg
-from instagram_story_agent.config import MAX_VIDEO_FRAMES, MIN_VIDEO_FRAMES
+from instagram_marketing_agent import ffmpeg
+from instagram_marketing_agent.config import MAX_VIDEO_FRAMES, MIN_VIDEO_FRAMES
 
 pytestmark = pytest.mark.unit
 

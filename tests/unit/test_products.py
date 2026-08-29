@@ -2,8 +2,8 @@
 
 import pytest
 
-from instagram_story_agent.config import TOPIC_FILE
-from instagram_story_agent.products import extract_skus, get_products, strip_html
+from instagram_marketing_agent.config import TOPIC_FILE
+from instagram_marketing_agent.products import extract_skus, get_products, strip_html
 
 pytestmark = pytest.mark.unit
 

@@ -5,8 +5,8 @@ import io
 import pytest
 from PIL import Image
 
-from instagram_story_agent.config import IMAGE_SUFFIXES
-from instagram_story_agent.llm import _MAX_IMAGE_BYTES, _api_ready, _sniff
+from instagram_marketing_agent.config import IMAGE_SUFFIXES
+from instagram_marketing_agent.llm import _MAX_IMAGE_BYTES, _api_ready, _sniff
 
 pytestmark = pytest.mark.unit
 

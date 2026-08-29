@@ -3,7 +3,7 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "instagram-story-agent"
+name = "instagram-marketing-agent"
 version = "0.1.0"
 description = "Turns local images and a markdown brief into ready-to-post Instagram story slides."
 readme = "README.md"
@@ -29,10 +29,10 @@ dev = [
 ]
 
 [project.scripts]
-instagram-story-agent = "instagram_story_agent.cli:main"
+instagram-marketing-agent = "instagram_marketing_agent.cli:main"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/instagram_story_agent"]
+packages = ["src/instagram_marketing_agent"]
 
 [tool.ruff]
 line-length = 100

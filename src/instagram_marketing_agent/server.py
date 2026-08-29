@@ -27,7 +27,7 @@ from .config import (
 from .models import Product, SlideSpec
 
 mcp = MCPServer(
-    name="instagram-story-agent",
+    name="instagram-marketing-agent",
     title="Instagram Story Telling Agent",
     description="Builds Instagram story campaigns from local images or vide and a brief.",
     version="0.1.0",

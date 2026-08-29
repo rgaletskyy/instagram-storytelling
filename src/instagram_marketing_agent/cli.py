@@ -50,7 +50,7 @@ def _run_lifestyle(args) -> int:
 
 def main() -> int:
     parser = argparse.ArgumentParser(
-        prog="instagram-story-agent",
+        prog="instagram-marketing-agent",
         description="Build an Instagram story campaign from content/input/.",
     )
     parser.add_argument(

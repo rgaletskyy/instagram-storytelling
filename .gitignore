@@ -12,7 +12,7 @@ lib/
 *.mcpb
 
 # Runtime state — OAuth tokens and run working directories
-.instagram-story-agent/
+.instagram-marketing-agent/
 
 # Secrets — never commit API keys
 .env
