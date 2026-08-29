@@ -6,6 +6,7 @@ from pathlib import Path
 import pytest
 
 from instagram_story_agent import ffmpeg
+from instagram_story_agent.config import MAX_VIDEO_FRAMES, MIN_VIDEO_FRAMES
 
 pytestmark = pytest.mark.unit
 
@@ -49,30 +50,41 @@ class TestFrameSampling:
         monkeypatch.setattr(ffmpeg, "_run", fake_run)
         return calls
 
-    @pytest.mark.parametrize(
-        "asked,expected",
-        [(1, 5), (5, 5), (7, 7), (10, 10), (25, 10), (100, 10)],
-    )
-    def test_the_count_is_clamped_to_five_through_ten(
-        self, monkeypatch, tmp_path, asked, expected
-    ):
+    @pytest.mark.parametrize("asked", [1, 3, 25, 100])
+    def test_a_count_outside_the_range_is_clamped(self, monkeypatch, tmp_path, asked):
+        """Follows the configured bounds rather than a hardcoded number."""
         self._capture(monkeypatch)
         monkeypatch.setattr(ffmpeg, "duration", lambda v: 60.0)
         frames = asyncio.run(
             ffmpeg.extract_frames(tmp_path / "v.mov", tmp_path / "out", asked)
         )
-        assert len(frames) == expected
+        assert MIN_VIDEO_FRAMES <= len(frames) <= MAX_VIDEO_FRAMES
+        assert len(frames) == min(max(asked, MIN_VIDEO_FRAMES), MAX_VIDEO_FRAMES)
+
+    def test_a_count_inside_the_range_is_honoured(self, monkeypatch, tmp_path):
+        self._capture(monkeypatch)
+        monkeypatch.setattr(ffmpeg, "duration", lambda v: 60.0)
+        asked = MIN_VIDEO_FRAMES + 1
+        frames = asyncio.run(
+            ffmpeg.extract_frames(tmp_path / "v.mov", tmp_path / "out", asked)
+        )
+        assert len(frames) == asked
+
+    def test_the_bounds_are_coherent(self):
+        assert 1 <= MIN_VIDEO_FRAMES <= MAX_VIDEO_FRAMES <= 10
 
     def test_the_rate_is_derived_from_the_clip_length(self, monkeypatch, tmp_path):
         """A fixed rate samples only the opening seconds of a long clip."""
         calls = self._capture(monkeypatch)
         monkeypatch.setattr(ffmpeg, "duration", lambda v: 100.0)
-        asyncio.run(ffmpeg.extract_frames(tmp_path / "v.mov", tmp_path / "out", 10))
+        asyncio.run(
+            ffmpeg.extract_frames(tmp_path / "v.mov", tmp_path / "out", MAX_VIDEO_FRAMES)
+        )
 
         args = calls[0]
         rate = float(args[args.index("-vf") + 1].removeprefix("fps="))
-        # 10 frames over 100 seconds is one every 10s, covering the whole clip.
-        assert rate == pytest.approx(0.1)
+        # The rate spreads the frames over the whole 100 seconds.
+        assert rate == pytest.approx(MAX_VIDEO_FRAMES / 100.0)
 
     def test_a_longer_clip_gets_a_slower_rate(self, monkeypatch, tmp_path):
         rates = []
@@ -81,7 +93,9 @@ class TestFrameSampling:
             calls.clear()
             monkeypatch.setattr(ffmpeg, "duration", lambda v, s=seconds: s)
             asyncio.run(
-                ffmpeg.extract_frames(tmp_path / "v.mov", tmp_path / f"o{seconds}", 10)
+                ffmpeg.extract_frames(
+                    tmp_path / "v.mov", tmp_path / f"o{seconds}", MAX_VIDEO_FRAMES
+                )
             )
             args = calls[0]
             rates.append(float(args[args.index("-vf") + 1].removeprefix("fps=")))
@@ -93,7 +107,9 @@ class TestFrameSampling:
     ):
         calls = self._capture(monkeypatch)
         monkeypatch.setattr(ffmpeg, "duration", lambda v: 0.0)
-        asyncio.run(ffmpeg.extract_frames(tmp_path / "v.mov", tmp_path / "out", 10))
+        asyncio.run(
+            ffmpeg.extract_frames(tmp_path / "v.mov", tmp_path / "out", MAX_VIDEO_FRAMES)
+        )
         args = calls[0]
         assert args[args.index("-vf") + 1] == "thumbnail"
 
