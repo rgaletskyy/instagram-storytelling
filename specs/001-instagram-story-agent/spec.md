@@ -85,6 +85,7 @@ After reviewing a generated campaign, the user is unhappy with a single slide. T
 - **FR-008**: System MUST generate a background image for each slide from that slide's prompt.
 - **FR-008b**: When a slide features the product, System MUST supply the user's own product photograph to image generation and reproduce that exact container, rather than letting the image model invent packaging, branding or label artwork.
 - **FR-008c**: System MUST identify which supplied photographs show the product, and MUST pass them only to slides that feature it.
+- **FR-008d**: When generating product photography, System MUST skip any product whose image cannot be obtained, reporting it with the reason, rather than generating frames that would carry invented packaging. If no named product has an obtainable image, the run MUST fail rather than produce a set.
 - **FR-008a**: The product page URL MUST NOT be passed to image generation or rendered onto any slide; it exists only as script metadata for the human posting the story.
 - **FR-009**: System MUST render each finished slide by laying the copy out over its background image as a styled document and capturing the result, respecting the project's design guidelines for canvas size, safe zones and typography.
 - **FR-009a**: Slide layout MUST be composed with sight of the background image, so copy is placed around the subject rather than at a fixed position, and MUST NOT cover the animal's face or the product.

@@ -455,16 +455,23 @@ async def create_post_campaign(
 # --- Lifestyle content -------------------------------------------------------
 
 
-def _packshot(product, work: Path) -> tuple[Path | None, list[Path]]:
+def _packshot(
+    product, work: Path, allow_local: bool = True
+) -> tuple[Path | None, list[Path]]:
     """The product photograph to hold the generation to.
 
-    Prefers the catalogue's own image; falls back to a photo supplied in the
-    input folder, since a good sixth of the catalogue has no image URL.
+    Prefers the catalogue's own image. A photo from the input folder is only
+    accepted as a fallback when it can be attributed to this product -- with
+    several SKUs in one brief there is no way to tell which one a loose input
+    photo depicts, and guessing would put the wrong packaging on a frame.
     """
     if product is not None:
         downloaded = download_product_image(product, work)
         if downloaded is not None:
             return downloaded, [downloaded]
+
+    if not allow_local:
+        return None, []
 
     local = local_product_photos()
     return (local[0] if local else None), local
@@ -525,10 +532,10 @@ async def _product_set(
     out_dir: Path,
     count: int,
     verify: bool,
+    packshot: Path | None,
+    references: list[Path],
 ) -> dict:
-    """One lifestyle set for one product."""
-    work = out_dir / f".source-{product.sku if product else 'unknown'}"
-    packshot, references = _packshot(product, work)
+    """One lifestyle set for one product, held to an already-resolved packshot."""
     prefix = product.sku if product else ""
 
     shot_list = await llm.generate_shot_list(brief, product, packshot, count)
@@ -584,16 +591,50 @@ async def create_lifestyle_content(
 
     # A brief naming no SKU still produces a set, worked from the brief alone.
     targets = products or [None]
-    sets = [
-        await _product_set(brief, product, out_dir, image_count, verify)
-        for product in targets
-    ]
+    # A loose photo in the input folder can only be attributed to a product when
+    # the brief names exactly one.
+    allow_local = len(targets) == 1
+
+    sets: list[dict] = []
+    skipped: list[dict] = []
+    for product in targets:
+        work = out_dir / f".source-{product.sku if product else 'unknown'}"
+        packshot, references = _packshot(product, work, allow_local=allow_local)
+        if product is not None and packshot is None:
+            # Generating without the real packaging produces a plausible bottle
+            # carrying an invented label, which is worse than no frame at all.
+            skipped.append(
+                {
+                    "sku": product.sku,
+                    "reason": "no product image available"
+                    + (
+                        "; the catalogue row has no photo URL"
+                        if not product.image_url.startswith("http")
+                        else "; the photo URL could not be downloaded"
+                    ),
+                }
+            )
+            logger.warning("skipping %s: no product image", product.sku)
+            continue
+        sets.append(
+            await _product_set(
+                brief, product, out_dir, image_count, verify, packshot, references
+            )
+        )
+
+    if not sets:
+        raise RuntimeError(
+            "no product image could be obtained for any SKU in the brief, so "
+            "every frame would carry invented packaging:\n  "
+            + "\n  ".join(f"{s['sku']}: {s['reason']}" for s in skipped)
+        )
 
     payload = {
         "output_dir": str(out_dir),
         "format": LIFESTYLE_FORMAT.name,
         "images_per_product": image_count,
         "sets": sets,
+        "skipped": skipped,
         "images": [image for s in sets for image in s["images"]],
         "missing_skus": missing,
         "failed_images": [f for s in sets for f in s["failed_images"]],

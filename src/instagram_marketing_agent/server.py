@@ -125,8 +125,11 @@ async def create_lifestyle_content(
     Reuses the campaign building blocks -- SKU lookup, product-referenced
     generation, verification -- but stops at images: a lifestyle frame carries
     no copy, because the brief rejects text baked into the picture. The packshot
-    is downloaded from the catalogue image URL, falling back to a photo in
-    content/input/ when the row has none. Frames are 4:5 (1080x1350).
+    is downloaded from the catalogue image URL. A product whose image cannot be
+    obtained is skipped and reported under "skipped", rather than generated with
+    invented packaging. A photo from content/input/ is used as a fallback only
+    when the brief names a single product, since a loose photo cannot be
+    attributed to one SKU among several. Frames are 4:5 (1080x1350).
 
     `image_count` is per product: a brief naming three SKUs yields three sets.
     Defaults to 3 images each when the brief does not say how many.

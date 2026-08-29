@@ -45,9 +45,9 @@ async def create_lifestyle_content(
     verify: bool = True,
 ) -> dict
 ```
-Lifestyle product photography for **every** SKU named in the brief — `image_count` is per product, so three SKUs at 3 each yields nine frames. Returns `{output_dir, format, images_per_product, sets, images, missing_skus, failed_images, verdicts}`, where each entry of `sets` carries its own `sku`, `product`, `packshot`, `images`, `shots` and `verdicts`.
+Lifestyle product photography for **every** SKU named in the brief — `image_count` is per product, so three SKUs at 3 each yields nine frames. Returns `{output_dir, format, images_per_product, sets, skipped, images, missing_skus, failed_images, verdicts}`, where each entry of `sets` carries its own `sku`, `product`, `packshot`, `images`, `shots` and `verdicts`.
 
-Reuses SKU lookup, product-referenced generation and verification, but has **no script or layout step** — `content://lifestyle-content-brief.md` §10 makes baked-in text an automatic reject, so a frame is the finished deliverable. Frames are 4:5, normalised to 1080×1350 per §9. The packshot comes from the catalogue image URL, falling back to a photo in `content/input/`.
+Reuses SKU lookup, product-referenced generation and verification, but has **no script or layout step** — `content://lifestyle-content-brief.md` §10 makes baked-in text an automatic reject, so a frame is the finished deliverable. Frames are 4:5, normalised to 1080×1350 per §9. The packshot comes from the catalogue image URL. A product whose image cannot be obtained is **skipped** and listed in `skipped` with the reason (FR-008d); a photo from `content/input/` is a fallback only when the brief names a single product.
 
 ### `get_product`
 ```python

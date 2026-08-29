@@ -243,3 +243,90 @@ def test_the_lifestyle_format_carries_no_safe_band():
     assert (LIFESTYLE_FORMAT.width, LIFESTYLE_FORMAT.height) == (1080, 1350)
     assert LIFESTYLE_FORMAT.safe_top == 0
     assert LIFESTYLE_FORMAT.safe_bottom == LIFESTYLE_FORMAT.height
+
+
+class TestMissingPackshot:
+    """A product with no real photo is skipped, not faked."""
+
+    @staticmethod
+    def _products(monkeypatch, *skus_with_url):
+        def fake(skus):
+            return (
+                [
+                    Product(
+                        sku=sku,
+                        name=sku,
+                        image_url="https://x/i.png" if has_url else "",
+                    )
+                    for sku, has_url in skus_with_url
+                ],
+                [],
+            )
+
+        monkeypatch.setattr(workflow, "get_products", fake)
+
+    def test_a_product_without_an_image_is_skipped(self, stubbed, monkeypatch):
+        self._products(monkeypatch, ("HAS-1", True), ("NONE-1", False))
+        monkeypatch.setattr(
+            workflow,
+            "download_product_image",
+            lambda p, d: (stubbed / "packshot.png") if p.image_url else None,
+        )
+        result = asyncio.run(workflow.create_lifestyle_content(topic="тема"))
+
+        assert [s["sku"] for s in result["sets"]] == ["HAS-1"]
+        assert [s["sku"] for s in result["skipped"]] == ["NONE-1"]
+        assert len(result["images"]) == 3
+
+    def test_the_reason_names_the_empty_catalogue_column(self, stubbed, monkeypatch):
+        self._products(monkeypatch, ("HAS-1", True), ("NONE-1", False))
+        monkeypatch.setattr(
+            workflow,
+            "download_product_image",
+            lambda p, d: (stubbed / "packshot.png") if p.image_url else None,
+        )
+        result = asyncio.run(workflow.create_lifestyle_content(topic="тема"))
+        assert "no photo URL" in result["skipped"][0]["reason"]
+
+    def test_a_failed_download_is_also_a_skip(self, stubbed, monkeypatch):
+        self._products(monkeypatch, ("HAS-1", True), ("DEAD-1", True))
+        monkeypatch.setattr(
+            workflow,
+            "download_product_image",
+            lambda p, d: (stubbed / "packshot.png") if p.sku == "HAS-1" else None,
+        )
+        result = asyncio.run(workflow.create_lifestyle_content(topic="тема"))
+        assert [s["sku"] for s in result["skipped"]] == ["DEAD-1"]
+        assert "could not be downloaded" in result["skipped"][0]["reason"]
+
+    def test_every_product_missing_an_image_is_an_error(self, stubbed, monkeypatch):
+        self._products(monkeypatch, ("NONE-1", False), ("NONE-2", False))
+        monkeypatch.setattr(workflow, "download_product_image", lambda p, d: None)
+        monkeypatch.setattr(workflow, "local_product_photos", lambda *a, **k: [])
+        with pytest.raises(RuntimeError, match="no product image could be obtained"):
+            asyncio.run(workflow.create_lifestyle_content(topic="тема"))
+
+    def test_a_loose_input_photo_serves_a_single_product(self, stubbed, monkeypatch):
+        """One SKU: the photo in content/input/ is unambiguously that product."""
+        local = stubbed / "local.png"
+        local.write_bytes(b"png")
+        self._products(monkeypatch, ("ONLY-1", False))
+        monkeypatch.setattr(workflow, "download_product_image", lambda p, d: None)
+        monkeypatch.setattr(workflow, "local_product_photos", lambda *a, **k: [local])
+
+        result = asyncio.run(workflow.create_lifestyle_content(topic="тема"))
+        assert result["sets"][0]["packshot"] == str(local)
+        assert result["skipped"] == []
+
+    def test_a_loose_photo_is_not_spread_across_several_products(
+        self, stubbed, monkeypatch
+    ):
+        """It cannot be attributed, and guessing puts the wrong label on a frame."""
+        local = stubbed / "local.png"
+        local.write_bytes(b"png")
+        self._products(monkeypatch, ("NONE-1", False), ("NONE-2", False))
+        monkeypatch.setattr(workflow, "download_product_image", lambda p, d: None)
+        monkeypatch.setattr(workflow, "local_product_photos", lambda *a, **k: [local])
+
+        with pytest.raises(RuntimeError, match="no product image could be obtained"):
+            asyncio.run(workflow.create_lifestyle_content(topic="тема"))

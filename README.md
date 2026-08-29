@@ -92,9 +92,13 @@ verification — but stops at images: `src/resources/lifestyle-content-brief.md`
 baked into the picture an automatic reject, so there is no layout pass and copy is applied
 later in design.
 
-The packshot is downloaded from the catalogue's image URL. Around a sixth of the catalogue
-has no URL, so it falls back to a photo in `content/input/`; without either, the packaging
-would be invented and the run says so.
+The packshot is downloaded from the catalogue's image URL. **A product whose image cannot
+be obtained is skipped**, and reported under `skipped` with the reason — generating it
+would produce a plausible bottle carrying an invented label, which is worse than no frame.
+
+Around a sixth of the catalogue has no image URL. A photo in `content/input/` is accepted
+as a fallback only when the brief names a single product: with several SKUs there is no way
+to tell which one a loose photo depicts, and guessing puts the wrong packaging on a frame.
 
 ## Product catalogue
 
