@@ -32,6 +32,15 @@ oversized images are downscaled before they reach the vision API. Video (`.mov`,
 is sampled for frames and transcribed, and needs ffmpeg. Sampling takes up to 10 frames
 spread across the whole clip.
 
+A campaign keeps what it read from a video, under `<project>/source/<clip>/`:
+
+```
+source/IMG_1923/
+  frame_01.jpg … frame_08.jpg   the sampled frames
+  transcript.txt                 what was said
+  frames.md                      the per-frame descriptions
+```
+
 ## Usage
 
 ```bash

@@ -270,8 +270,11 @@ async def validate_slide(
 
 @mcp.tool()
 @_reporting
-async def transcribe_video(video_path: str) -> str:
-    """Extract the audio track and transcribe it. Empty when there is no audio."""
+async def transcribe_video(video_path: str, out_dir: str | None = None) -> str:
+    """Extract the audio track and transcribe it. Empty when there is no audio.
+
+    With `out_dir`, the transcript is also written there as `<name>-transcript.txt`.
+    """
     import tempfile
 
     video = Path(video_path)
@@ -279,20 +282,35 @@ async def transcribe_video(video_path: str) -> str:
         audio = await ffmpeg.extract_audio(video, Path(tmp) / "audio.wav")
         if audio is None:
             return ""
-        return await llm.transcribe_audio(audio)
+        transcript = await llm.transcribe_audio(audio)
+
+    if out_dir and transcript:
+        destination = Path(out_dir)
+        destination.mkdir(parents=True, exist_ok=True)
+        (destination / f"{video.stem}-transcript.txt").write_text(
+            transcript, encoding="utf-8"
+        )
+    return transcript
 
 
 @mcp.tool()
 @_reporting
 async def describe_video(
-    video_path: str, frame_count: int = DEFAULT_VIDEO_FRAMES
+    video_path: str,
+    frame_count: int = DEFAULT_VIDEO_FRAMES,
+    out_dir: str | None = None,
 ) -> str:
     """Describe a video from frames sampled across it, plus its transcript.
 
     `frame_count` is clamped to 5-10: enough to follow the clip, capped so a
-    long video does not fan out into dozens of vision calls.
+    long video does not fan out into dozens of vision calls. With `out_dir`, the
+    sampled frames and the transcript are kept there instead of discarded.
     """
-    described = await workflow.describe_video(Path(video_path), frame_count)
+    described = await workflow.describe_video(
+        Path(video_path),
+        frame_count,
+        artifacts_dir=Path(out_dir) if out_dir else None,
+    )
     return described.as_context()
 
 

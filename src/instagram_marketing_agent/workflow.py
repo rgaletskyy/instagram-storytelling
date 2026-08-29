@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 import logging
 import re
@@ -103,17 +104,40 @@ def _input_files(input_dir: Path) -> tuple[list[Path], list[Path]]:
     return images, videos
 
 
+@contextlib.contextmanager
+def _video_workspace(video: Path, artifacts_dir: Path | None):
+    """Where a clip's frames and transcript are written.
+
+    With an artifacts directory the extracted frames and the transcript are kept
+    alongside the campaign, so what the script was written from can be read back
+    afterwards. Without one they are scratch and discarded.
+    """
+    if artifacts_dir is None:
+        with tempfile.TemporaryDirectory() as tmp:
+            yield Path(tmp), False
+    else:
+        keep = artifacts_dir / video.stem
+        keep.mkdir(parents=True, exist_ok=True)
+        yield keep, True
+
+
 async def describe_video(
-    video: Path, frame_count: int = DEFAULT_VIDEO_FRAMES
+    video: Path,
+    frame_count: int = DEFAULT_VIDEO_FRAMES,
+    artifacts_dir: Path | None = None,
 ) -> MediaDescription:
-    """Frames described one by one, merged with the transcript."""
-    with tempfile.TemporaryDirectory() as tmp:
-        tmp_dir = Path(tmp)
-        frames = await ffmpeg.extract_frames(video, tmp_dir, frame_count)
+    """Frames described one by one, merged with the transcript.
+
+    When `artifacts_dir` is given, the sampled frames and the transcript are
+    saved there rather than thrown away.
+    """
+    with _video_workspace(video, artifacts_dir) as (work, keeping):
+        frames = await ffmpeg.extract_frames(video, work, frame_count)
         frame_texts = await asyncio.gather(
             *(llm.describe_image(f) for f in frames), return_exceptions=True
         )
-        audio = await ffmpeg.extract_audio(video, tmp_dir / "audio.wav")
+
+        audio = await ffmpeg.extract_audio(video, work / "audio.wav")
         transcript = ""
         if audio:
             try:
@@ -124,8 +148,20 @@ async def describe_video(
                 transcript = ""
                 logger.warning("could not transcribe %s: %s", video.name, exc)
 
-    described = [t for t in frame_texts if isinstance(t, str)]
-    merged = "\n".join(f"Frame {i}: {t}" for i, t in enumerate(described, 1))
+        described = [t for t in frame_texts if isinstance(t, str)]
+        merged = "\n".join(f"Frame {i}: {t}" for i, t in enumerate(described, 1))
+
+        if keeping:
+            # The audio is an intermediate; the frames and the words are not.
+            if audio is not None:
+                audio.unlink(missing_ok=True)
+            if transcript:
+                (work / "transcript.txt").write_text(transcript, encoding="utf-8")
+            if merged:
+                (work / "frames.md").write_text(
+                    f"# {video.name}\n\n{merged}\n", encoding="utf-8"
+                )
+
     return MediaDescription(
         path=video,
         kind="video",
@@ -134,8 +170,13 @@ async def describe_video(
     )
 
 
-async def describe_inputs(input_dir: Path | None = None) -> list[MediaDescription]:
-    """Describe every image and video in the input folder."""
+async def describe_inputs(
+    input_dir: Path | None = None, artifacts_dir: Path | None = None
+) -> list[MediaDescription]:
+    """Describe every image and video in the input folder.
+
+    `artifacts_dir` is where a video's frames and transcript are kept.
+    """
     directory = input_dir or INPUT_DIR
     if not directory.exists():
         raise FileNotFoundError(f"input folder not found: {directory}")
@@ -179,7 +220,9 @@ async def describe_inputs(input_dir: Path | None = None) -> list[MediaDescriptio
         logger.warning("%d of %d images could not be described", len(refused), len(images))
 
     for video in videos:
-        described.append(await describe_video(video))
+        described.append(
+            await describe_video(video, artifacts_dir=artifacts_dir)
+        )
     return described
 
 
@@ -290,7 +333,11 @@ async def create_campaign(
         )
     brief = topic or read_topic()
     products, missing = get_products(extract_skus(brief))
-    descriptions = await describe_inputs()
+
+    # Created before the input is described so a video's frames and transcript
+    # can be written straight into the project rather than to scratch space.
+    out_dir = _new_project_dir(brief, fmt)
+    descriptions = await describe_inputs(artifacts_dir=out_dir / "source")
 
     script = await llm.generate_script(
         topic=brief,
@@ -299,8 +346,6 @@ async def create_campaign(
         slide_count=slide_count,
     )
     _guard_prompts(script)
-
-    out_dir = _new_project_dir(brief, fmt)
 
     references = product_references(descriptions)
     results = await asyncio.gather(

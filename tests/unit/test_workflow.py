@@ -82,7 +82,7 @@ def stubbed(monkeypatch, tmp_path):
     monkeypatch.setattr(slide_html, "screenshot", fake_shot)
     monkeypatch.setattr(llm, "verify_slide", fake_verify)
 
-    async def fake_inputs(_dir=None):
+    async def fake_inputs(_dir=None, artifacts_dir=None):
         return [
             MediaDescription(
                 path=tmp_path / "packshot.png",
@@ -146,8 +146,11 @@ def test_a_url_in_an_image_prompt_stops_the_run(stubbed, monkeypatch):
     monkeypatch.setattr(llm, "generate_script", leaky)
     with pytest.raises(ValueError, match="contains a URL"):
         asyncio.run(workflow.create_story_campaign(topic="тема", slide_count=5))
-    # Nothing generated: the guard runs before any directory is made.
-    assert list(stubbed.iterdir()) == []
+    # The guard runs before any image is generated, so no slide is produced.
+    # The project folder itself may exist by then: it is created up front so a
+    # video's frames and transcript have somewhere to go.
+    assert not list(stubbed.rglob("*.jpg"))
+    assert not list(stubbed.rglob("script.json"))
 
 
 def test_each_run_gets_its_own_folder(stubbed):
@@ -434,3 +437,95 @@ def test_a_partial_failure_keeps_the_photos_that_worked(monkeypatch, tmp_path):
     monkeypatch.setattr(llm, "inspect_image", flaky)
     described = asyncio.run(workflow.describe_inputs(tmp_path))
     assert [d.path.name for d in described] == ["b.png"]
+
+
+class TestVideoArtifacts:
+    """A clip's frames and transcript are kept alongside the campaign."""
+
+    @staticmethod
+    def _stub(monkeypatch, transcript="привіт зі студії"):
+        from instagram_marketing_agent import ffmpeg
+
+        async def fake_frames(video, out_dir, count=8):
+            out_dir.mkdir(parents=True, exist_ok=True)
+            made = []
+            for i in range(1, 4):
+                frame = out_dir / f"frame_{i:02d}.jpg"
+                frame.write_bytes(b"jpeg")
+                made.append(frame)
+            return made
+
+        async def fake_audio(video, out_path):
+            out_path.parent.mkdir(parents=True, exist_ok=True)
+            out_path.write_bytes(b"wav")
+            return out_path
+
+        async def fake_describe(path):
+            return f"a frame at {path.name}"
+
+        async def fake_transcribe(audio):
+            return transcript
+
+        monkeypatch.setattr(ffmpeg, "extract_frames", fake_frames)
+        monkeypatch.setattr(ffmpeg, "extract_audio", fake_audio)
+        monkeypatch.setattr(llm, "describe_image", fake_describe)
+        monkeypatch.setattr(llm, "transcribe_audio", fake_transcribe)
+
+    def test_frames_and_transcript_are_saved(self, monkeypatch, tmp_path):
+        self._stub(monkeypatch)
+        video = tmp_path / "clip.mov"
+        video.write_bytes(b"mov")
+        artifacts = tmp_path / "source"
+
+        asyncio.run(workflow.describe_video(video, artifacts_dir=artifacts))
+
+        kept = artifacts / "clip"
+        assert sorted(p.name for p in kept.glob("frame_*.jpg")) == [
+            "frame_01.jpg",
+            "frame_02.jpg",
+            "frame_03.jpg",
+        ]
+        assert (kept / "transcript.txt").read_text(encoding="utf-8") == (
+            "привіт зі студії"
+        )
+        assert "a frame at" in (kept / "frames.md").read_text(encoding="utf-8")
+
+    def test_the_intermediate_audio_is_not_kept(self, monkeypatch, tmp_path):
+        """The frames and the words are the deliverable; the wav is scratch."""
+        self._stub(monkeypatch)
+        video = tmp_path / "clip.mov"
+        video.write_bytes(b"mov")
+        artifacts = tmp_path / "source"
+
+        asyncio.run(workflow.describe_video(video, artifacts_dir=artifacts))
+        assert not list((artifacts / "clip").glob("*.wav"))
+
+    def test_no_transcript_file_when_there_is_nothing_spoken(
+        self, monkeypatch, tmp_path
+    ):
+        self._stub(monkeypatch, transcript="")
+        video = tmp_path / "clip.mov"
+        video.write_bytes(b"mov")
+        artifacts = tmp_path / "source"
+
+        asyncio.run(workflow.describe_video(video, artifacts_dir=artifacts))
+        assert not (artifacts / "clip" / "transcript.txt").exists()
+        assert list((artifacts / "clip").glob("frame_*.jpg"))
+
+    def test_without_a_directory_nothing_is_left_behind(self, monkeypatch, tmp_path):
+        self._stub(monkeypatch)
+        video = tmp_path / "clip.mov"
+        video.write_bytes(b"mov")
+
+        asyncio.run(workflow.describe_video(video))
+        assert [p.name for p in tmp_path.iterdir()] == ["clip.mov"]
+
+    def test_each_clip_gets_its_own_folder(self, monkeypatch, tmp_path):
+        self._stub(monkeypatch)
+        artifacts = tmp_path / "source"
+        for name in ("first.mov", "second.mov"):
+            video = tmp_path / name
+            video.write_bytes(b"mov")
+            asyncio.run(workflow.describe_video(video, artifacts_dir=artifacts))
+
+        assert sorted(p.name for p in artifacts.iterdir()) == ["first", "second"]

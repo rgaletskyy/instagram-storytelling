@@ -92,6 +92,7 @@ After reviewing a generated campaign, the user is unhappy with a single slide. T
 - **FR-009c**: When a slide fails verification, System MUST attempt to re-lay it out using the reported issues as feedback, and MUST keep and report the best attempt rather than discarding the slide.
 - **FR-010**: System MUST generate slides concurrently so that a multi-slide campaign is not produced strictly one slide at a time.
 - **FR-011**: System MUST save every campaign into its own folder named from the topic plus a date-and-time suffix, containing the rendered slides and the campaign script.
+- **FR-011a**: When a video is supplied, System MUST keep the frames sampled from it and the transcript of its audio in the campaign folder, so what the script was written from can be read back afterwards.
 - **FR-012**: Users MUST be able to regenerate an individual slide from a written comment without affecting the other slides in the campaign.
 - **FR-013**: System MUST publish its capabilities to AI chat clients over a locally run interface, exposing the campaign, product, image-generation, script-generation, slide-rendering, slide-revision, image-description, video-transcription and project-saving operations as callable tools.
 - **FR-014**: System MUST publish the story design guidelines and the story-telling rules as readable resources to connected chat clients.
