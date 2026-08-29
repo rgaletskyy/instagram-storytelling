@@ -38,6 +38,7 @@ One entry of the generated script, produced by Opus. Satisfies FR-006.
 | `overlay_text` | `str` | the copy drawn onto the slide, in the brief's language |
 | `ig_notes` | `str` | stickers / polls / link to add at posting time — notes only, never rendered |
 | `shows_product` | `bool` | true when the product container appears; gates the packshot reference (FR-008b) |
+| `has_human` | `bool` | true when a person is in frame; gates the cast description (FR-008e) |
 
 **Rules**
 
@@ -75,6 +76,7 @@ The whole generated script; the structured-output schema for the Opus call. Save
 | `slides` | `list[SlideSpec]` | length 3–7 (spec assumption; `story-telling-rules.md` §2) |
 | `products` | `list[Product]` | resolved catalogue entries |
 | `product_url` | `str \| None` | convenience copy of the primary product's link for the CTA (FR-006a) |
+| `cast` | `str` | the one person appearing across the campaign — age, build, hands, wardrobe. Slides are generated independently, so without it each invents a different owner (FR-008e) |
 
 **Rules**
 

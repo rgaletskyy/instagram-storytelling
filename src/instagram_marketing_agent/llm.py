@@ -64,10 +64,62 @@ def gemini_client():
     return _gemini
 
 
+# Slides and frames are generated independently, so unless one person is
+# described up front and repeated verbatim, each image invents a different owner
+# -- different hands, sleeves and skin on every slide of the same story.
+CAST_RULE = (
+    "Exactly ONE person appears across this whole set. Describe them once in "
+    "`cast`: approximate age, build, skin tone, hands and nails, hair, and "
+    "wardrobe (plain and muted -- no patterns, slogans, loud manicure, watches "
+    "or jewellery). Do not name them and do not describe a face in detail; they "
+    "are mostly hands, forearms and partial figure.\n"
+    "Every image that shows a human shows THIS person and no one else. Never a "
+    "second person, never a different owner, never a pair of hands belonging to "
+    "someone else. Mark `has_human` true on exactly those images."
+)
+
+
+def _cast_check(cast: str) -> str:
+    """Tell the reviewer who the one person in this set is meant to be."""
+    if not cast.strip():
+        return ""
+    return (
+        f"\nThe only person who may appear anywhere in this set is:\n"
+        f"{cast.strip()}\n"
+    )
+
+
+def _cast_failures(cast: str) -> str:
+    """Reject a frame that shows the wrong person, or more than one."""
+    if not cast.strip():
+        return (
+            "- more than one person appears, or a stray second pair of hands "
+            "enters the frame\n"
+        )
+    return (
+        "- the person shown contradicts the description above (different skin "
+        "tone, hands, nails, hair or wardrobe)\n"
+        "- more than one person appears, or a stray second pair of hands "
+        "enters the frame\n"
+    )
+
+
+def _cast_clause(cast: str) -> str:
+    """The line appended to an image prompt so the same person appears."""
+    if not cast.strip():
+        return ""
+    return (
+        f"\n\nThe single person in this image is: {cast.strip()}\n"
+        "Show only this one person -- one pair of hands, one body. No second "
+        "person, no extra hands or arms entering the frame."
+    )
+
+
 class _ScriptDraft(BaseModel):
     """What Opus returns. Products are injected by us, not invented by the model."""
 
     slides: list[SlideSpec]
+    cast: str = ""
 
 
 class _ImageDescription(BaseModel):
@@ -204,6 +256,7 @@ async def generate_script(
         "  shows_product- true when the product container should appear in the "
         "image. Typically the solution, offer and cta slides; usually false for "
         "hook and tension, which are about the problem.\n"
+        "  has_human   - true when a hand, arm or person is in frame.\n"
         "  overlay_text- the short copy drawn on the slide, in the brief's "
         "language. REQUIRED on every slide and never empty: a slide with no "
         "words is a dead frame the viewer taps past. Give each slide its own "
@@ -211,7 +264,8 @@ async def generate_script(
         "repeat another slide's copy, and never rely on the image alone to "
         "carry the message.\n"
         "  ig_notes    - stickers, polls or link to add when posting\n"
-        "Order the slides hook first and cta last, with exactly one cta.\n"
+        "Order the slides hook first and cta last, with exactly one cta.\n\n"
+        + CAST_RULE + "\n\n"
         "Before answering, check every slide has non-empty overlay_text."
     )
 
@@ -246,6 +300,7 @@ async def generate_script(
         slides=slides,
         products=products,
         product_url=products[0].product_url if products else None,
+        cast=draft.cast,
     )
 
 
@@ -534,7 +589,10 @@ async def generate_slide_html(
 
 
 async def verify_slide(
-    image: Path, slide: SlideSpec, fmt: CanvasFormat = STORY_FORMAT
+    image: Path,
+    slide: SlideSpec,
+    fmt: CanvasFormat = STORY_FORMAT,
+    cast: str = "",
 ) -> SlideVerdict:
     """Check a rendered slide against the design guidelines and its own copy."""
     response = await anthropic_client().messages.parse(
@@ -563,7 +621,9 @@ async def verify_slide(
                         "type": "text",
                         "text": (
                             f"This is slide {slide.index} (role: {slide.role}).\n"
-                            f"It must display this copy:\n{slide.overlay_text}\n\n"
+                            f"It must display this copy:\n{slide.overlay_text}\n"
+                            + _cast_check(cast)
+                            + "\n"
                             "Judge the WHOLE text block -- the card, panel, "
                             "scrim or gradient behind the copy counts as part "
                             "of it, not just the letters.\n\n"
@@ -581,7 +641,9 @@ async def verify_slide(
                             f"- text sits outside y={fmt.safe_top}..{fmt.safe_bottom}px\n"
                             "- text is unreadable against the background\n"
                             "- the copy shown differs from the copy above\n"
-                            "- the layout looks careless or unbalanced\n\n"
+                            "- the layout looks careless or unbalanced\n"
+                            + _cast_failures(cast)
+                            + "\n"
                             "Set passed=false with specific, actionable issues, or "
                             "passed=true with an empty issues list."
                         ),
@@ -661,9 +723,10 @@ async def generate_shot_list(
         "unchanged. Refer to it as 'the product shown in the reference photo'.\n"
         "Never ask for text, captions, watermarks or graphic overlays in the "
         "image: section 10 rejects any baked-in text.\n"
-        "`excludes` lists what must not appear in that frame.\n"
-        "`has_human` is true when a hand, arm or person is in frame. At least "
-        "one frame in the set must have has_human=false (section 13)."
+        "`excludes` lists what must not appear in that frame.\n\n"
+        + CAST_RULE
+        + "\nAt least one frame in the set must have has_human=false "
+        "(section 13: generated hands are the highest-risk element)."
     )
 
     response = await anthropic_client().messages.parse(
@@ -704,7 +767,7 @@ async def generate_shot_list(
 
 
 async def verify_lifestyle_frame(
-    image: Path, shot: LifestyleShot
+    image: Path, shot: LifestyleShot, cast: str = ""
 ) -> SlideVerdict:
     """Judge one frame against the brief's reject list and review checklist."""
     response = await anthropic_client().messages.parse(
@@ -721,7 +784,9 @@ async def verify_lifestyle_frame(
                         "type": "text",
                         "text": (
                             f"Frame {shot.index} of the set, role: {shot.role}.\n"
-                            f"It was shot to this brief:\n{shot.prompt}\n\n"
+                            f"It was shot to this brief:\n{shot.prompt}\n"
+                            + _cast_check(cast)
+                            + "\n"
                             "Run it against section 10 (automatic reject) and "
                             "section 11 (review checklist). Fail it if any of "
                             "these is true:\n"
@@ -736,7 +801,9 @@ async def verify_lifestyle_frame(
                             "- a competing brand, unsafe handling, or anything "
                             "toxic to dogs is in frame\n"
                             "- the scene is clinical or implies medical treatment\n"
-                            "- scale is implausible\n\n"
+                            "- scale is implausible\n"
+                            + _cast_failures(cast)
+                            + "\n"
                             "Set passed=false with specific, actionable issues, "
                             "or passed=true with an empty issues list."
                         ),

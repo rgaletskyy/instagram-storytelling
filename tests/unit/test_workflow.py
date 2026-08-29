@@ -72,7 +72,7 @@ def stubbed(monkeypatch, tmp_path):
         path.write_bytes(b"slide")
         return path
 
-    async def fake_verify(image, slide, fmt=None):
+    async def fake_verify(image, slide, fmt=None, cast=""):
         return SlideVerdict(index=slide.index, passed=True)
 
     monkeypatch.setattr(llm, "inspect_image", fake_inspect)
@@ -176,7 +176,7 @@ def test_a_rejected_slide_is_retried_with_the_issues_as_feedback(stubbed, monkey
             seen.append(issues)
         return "<html></html>"
 
-    async def picky(image, slide, fmt=None):
+    async def picky(image, slide, fmt=None, cast=""):
         if slide.index == 1:
             attempts["n"] += 1
             if attempts["n"] == 1:
@@ -192,7 +192,7 @@ def test_a_rejected_slide_is_retried_with_the_issues_as_feedback(stubbed, monkey
 
 
 def test_a_slide_that_never_passes_is_still_kept_and_reported(stubbed, monkeypatch):
-    async def always_fail(image, slide, fmt=None):
+    async def always_fail(image, slide, fmt=None, cast=""):
         return SlideVerdict(index=slide.index, passed=False, issues=["still ugly"])
 
     monkeypatch.setattr(llm, "verify_slide", always_fail)
@@ -204,7 +204,7 @@ def test_a_slide_that_never_passes_is_still_kept_and_reported(stubbed, monkeypat
 
 
 def test_verification_can_be_skipped(stubbed, monkeypatch):
-    async def boom(image, slide, fmt=None):
+    async def boom(image, slide, fmt=None, cast=""):
         raise AssertionError("verifier must not run when verify=False")
 
     monkeypatch.setattr(llm, "verify_slide", boom)

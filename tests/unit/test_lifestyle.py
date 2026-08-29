@@ -54,7 +54,7 @@ def stubbed(monkeypatch, tmp_path):
         path.write_bytes(b"jpeg")
         return path
 
-    async def fake_verify(image, shot):
+    async def fake_verify(image, shot, cast=""):
         return SlideVerdict(index=shot.index, passed=True)
 
     monkeypatch.setattr(llm, "generate_shot_list", fake_shot_list)
@@ -185,7 +185,7 @@ def test_a_rejected_frame_is_retried_with_the_defect_named(stubbed, monkeypatch)
         path.write_bytes(b"jpeg")
         return path
 
-    async def picky(image, shot):
+    async def picky(image, shot, cast=""):
         if shot.index == 1:
             attempts["n"] += 1
             if attempts["n"] == 1:
@@ -204,7 +204,7 @@ def test_a_rejected_frame_is_retried_with_the_defect_named(stubbed, monkeypatch)
 
 
 def test_a_frame_that_never_passes_is_kept_and_flagged(stubbed, monkeypatch):
-    async def always_fail(image, shot):
+    async def always_fail(image, shot, cast=""):
         return SlideVerdict(index=shot.index, passed=False, issues=["bad anatomy"])
 
     monkeypatch.setattr(llm, "verify_lifestyle_frame", always_fail)
@@ -216,7 +216,7 @@ def test_a_frame_that_never_passes_is_kept_and_flagged(stubbed, monkeypatch):
 
 
 def test_verification_can_be_skipped(stubbed, monkeypatch):
-    async def boom(image, shot):
+    async def boom(image, shot, cast=""):
         raise AssertionError("verifier must not run when verify=False")
 
     monkeypatch.setattr(llm, "verify_lifestyle_frame", boom)

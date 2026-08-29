@@ -255,6 +255,7 @@ async def _build_slide(
     verify: bool = True,
     references: list[Path] | None = None,
     fmt: CanvasFormat = STORY_FORMAT,
+    cast: str = "",
 ) -> tuple[Path, SlideVerdict | None]:
     """Background -> HTML layout -> browser screenshot -> verification.
 
@@ -264,8 +265,12 @@ async def _build_slide(
     work = out_dir / f".slide_{slide.index}"
     work.mkdir(parents=True, exist_ok=True)
     background = work / "background.jpg"
+    prompt = slide.image_prompt
+    if slide.has_human:
+        # Without this every slide invents its own owner.
+        prompt += llm._cast_clause(cast)
     await llm.generate_image(
-        slide.image_prompt,
+        prompt,
         background,
         model=model,
         # Only slides that actually feature the product get the packshot.
@@ -282,7 +287,7 @@ async def _build_slide(
         await slide_html.screenshot(html, out_path, work, fmt)
         if not verify:
             break
-        verdict = await llm.verify_slide(out_path, slide, fmt)
+        verdict = await llm.verify_slide(out_path, slide, fmt, cast)
         if verdict.passed:
             break
         issues = verdict.issues
@@ -357,6 +362,7 @@ async def create_campaign(
                 verify=verify,
                 references=references,
                 fmt=fmt,
+                cast=script.cast,
             )
             for s in script.slides
         ),
@@ -421,6 +427,7 @@ async def regenerate_slide(
         GEMINI_IMAGE_PRO_MODEL,
         references=references,
         fmt=FORMATS.get(payload.get("format", "story"), STORY_FORMAT),
+        cast=script.cast,
     )
 
     # Rewrite only this entry, preserving everything else in the file.
@@ -483,6 +490,7 @@ async def _build_frame(
     references: list[Path],
     verify: bool = True,
     prefix: str = "",
+    cast: str = "",
 ) -> LifestyleFrame:
     """Generate one lifestyle frame and judge it.
 
@@ -496,6 +504,8 @@ async def _build_frame(
 
     for _attempt in range(VERIFY_RETRIES + 1):
         prompt = shot.prompt
+        if shot.has_human:
+            prompt += llm._cast_clause(cast)
         if shot.excludes:
             prompt = f"{prompt}\n\nDo not include: {shot.excludes}"
         if issues:
@@ -516,7 +526,7 @@ async def _build_frame(
         slide_html.normalize(out_path, LIFESTYLE_FORMAT)
         if not verify:
             break
-        verdict = await llm.verify_lifestyle_frame(out_path, shot)
+        verdict = await llm.verify_lifestyle_frame(out_path, shot, cast)
         if verdict.passed:
             break
         issues = verdict.issues
@@ -542,7 +552,7 @@ async def _product_set(
 
     results = await asyncio.gather(
         *(
-            _build_frame(s, out_dir, references, verify, prefix)
+            _build_frame(s, out_dir, references, verify, prefix, shot_list.cast)
             for s in shot_list.shots
         ),
         return_exceptions=True,

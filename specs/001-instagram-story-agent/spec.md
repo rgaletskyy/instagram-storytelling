@@ -88,6 +88,7 @@ After reviewing a generated campaign, the user is unhappy with a single slide. T
 - **FR-008d**: When generating product photography, System MUST skip any product whose image cannot be obtained, reporting it with the reason, rather than generating frames that would carry invented packaging. If no named product has an obtainable image, the run MUST fail rather than produce a set.
 - **FR-008a**: The product page URL MUST NOT be passed to image generation or rendered onto any slide; it exists only as script metadata for the human posting the story.
 - **FR-009**: System MUST render each finished slide by laying the copy out over its background image as a styled document and capturing the result, respecting the project's design guidelines for canvas size, safe zones and typography.
+- **FR-008e**: When more than one image in a set shows a person, System MUST show the same person throughout: it MUST describe one person for the set and apply that description to every image featuring a human, and MUST NOT place a second person in any single image.
 - **FR-009a**: Slide layout MUST be composed with sight of the background image, so copy is placed around the subject rather than at a fixed position, and MUST NOT cover the animal's face or the product.
 - **FR-009b**: System MUST verify each rendered slide against the design guidelines and against the copy it was meant to display, recording a pass/fail verdict with specific issues for every slide.
 - **FR-009c**: When a slide fails verification, System MUST attempt to re-lay it out using the reported issues as feedback, and MUST keep and report the best attempt rather than discarding the slide.
@@ -120,6 +121,7 @@ After reviewing a generated campaign, the user is unhappy with a single slide. T
 - **SC-004a**: Every rendered slide carries a recorded verification verdict, and any slide that fails names the specific problems found.
 - **SC-005**: Every generated campaign script covers the mandated narrative beats in order, ending with a single call to action.
 - **SC-005a**: The product page URL appears in every generated script and in none of the generated slide images.
+- **SC-005a2**: Across one campaign or lifestyle set, every image showing a person shows the same person, and no image shows two.
 - **SC-005b**: On every slide showing the product, the container matches the supplied photograph — same shape, colour and label artwork — with no invented brand name or logo.
 - **SC-005c**: A campaign contains exactly the number of slides requested.
 - **SC-006**: A connected AI chat client can discover and successfully call every published capability without additional configuration beyond starting the server.

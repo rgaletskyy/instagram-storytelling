@@ -100,6 +100,14 @@ Around a sixth of the catalogue has no image URL. A photo in `content/input/` is
 as a fallback only when the brief names a single product: with several SKUs there is no way
 to tell which one a loose photo depicts, and guessing puts the wrong packaging on a frame.
 
+## One person per set
+
+A campaign or lifestyle set defines a single `cast` — one person, described once by age,
+build, hands and wardrobe. Every image that features a human carries that description, and
+the verifier rejects a frame showing a different person or a second one. Without it each
+image is generated independently and invents its own owner, so the same story ends up with
+a different pair of hands on every slide.
+
 ## Product catalogue
 
 `src/resources/products.xlsx` holds the product data and is **not** in version control. A

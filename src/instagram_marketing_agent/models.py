@@ -32,6 +32,7 @@ class SlideSpec(BaseModel):
     overlay_text: str
     ig_notes: str = ""
     shows_product: bool = False
+    has_human: bool = False
 
 
 class CampaignScript(BaseModel):
@@ -41,6 +42,9 @@ class CampaignScript(BaseModel):
     slides: list[SlideSpec]
     products: list[Product] = Field(default_factory=list)
     product_url: str | None = None
+    # One person for the whole campaign. Slides are generated independently, so
+    # without a shared description each one invents a different owner.
+    cast: str = ""
 
     @field_validator("slides")
     @classmethod
@@ -79,6 +83,8 @@ class LifestyleSet(BaseModel):
 
     topic: str
     shots: list[LifestyleShot]
+    # One person across the whole set, for the same reason as CampaignScript.
+    cast: str = ""
 
 
 class LifestyleFrame(BaseModel):
