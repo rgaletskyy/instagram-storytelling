@@ -10,6 +10,7 @@ import re
 import shutil
 import tempfile
 import unicodedata
+from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 
@@ -19,6 +20,7 @@ from .config import (
     DEFAULT_SLIDES,
     DEFAULT_VIDEO_FRAMES,
     FORMATS,
+    FRAME_INSPECT_LIMIT,
     GEMINI_IMAGE_PRO_MODEL,
     IMAGE_SUFFIXES,
     INPUT_DIR,
@@ -28,6 +30,7 @@ from .config import (
     MIN_SLIDES,
     OUTPUT_DIR,
     POST_FORMAT,
+    REFERENCE_LIMIT,
     STORY_FORMAT,
     TOPIC_FILE,
     VERIFY_RETRIES,
@@ -167,6 +170,8 @@ async def describe_video(
         kind="video",
         description=merged or "Video could not be described.",
         transcript=transcript or None,
+        # Only frames that outlive this call can serve as references later.
+        frames=list(frames) if keeping else [],
     )
 
 
@@ -238,6 +243,81 @@ def product_references(
     return [d.path for d in descriptions if d.shows_product][:limit]
 
 
+@dataclass(frozen=True)
+class SubjectReferences:
+    """Real photographs of what appears in a scene.
+
+    The image prompt describes the scene; who and what is in it comes from
+    these. A subject described in words is a subject the model reinvents.
+    """
+
+    product: list[Path] = field(default_factory=list)
+    dog: list[Path] = field(default_factory=list)
+    person: list[Path] = field(default_factory=list)
+
+    def for_slide(
+        self, shows_product: bool, has_dog: bool, has_human: bool
+    ) -> list[Path]:
+        """The references to attach, capped so the model is not swamped."""
+        chosen: list[Path] = []
+        if shows_product:
+            chosen += self.product[:1]
+        if has_dog:
+            chosen += self.dog[:1]
+        if has_human:
+            chosen += self.person[:1]
+        # Preserve order, drop repeats: one photo may serve two subjects.
+        seen: list[Path] = []
+        for path in chosen:
+            if path not in seen:
+                seen.append(path)
+        return seen[:REFERENCE_LIMIT]
+
+
+def _frames_of(descriptions: list[MediaDescription]) -> list[Path]:
+    """Frames already sampled from a supplied video, newest description first."""
+    frames: list[Path] = []
+    for described in descriptions:
+        if described.kind == "video" and described.frames:
+            frames.extend(described.frames)
+    return frames
+
+
+async def subject_references(
+    descriptions: list[MediaDescription],
+) -> SubjectReferences:
+    """Pick a real photograph for each subject that may appear in a scene.
+
+    Video frames count: they show the actual dog and owner in motion, which is
+    usually a better likeness than a posed photo, and they are already on disk
+    beside the campaign.
+    """
+    stills = [d for d in descriptions if d.kind == "image"]
+    product = [d.path for d in stills if d.shows_product]
+    dog = [d.path for d in stills if d.shows_dog]
+    person = [d.path for d in stills if d.shows_person]
+
+    frames = _frames_of(descriptions)
+    if frames and not (dog and person):
+        # Only pay to inspect frames when a still has not already supplied the
+        # subject we are missing.
+        looked = await asyncio.gather(
+            *(llm.inspect_image(f) for f in frames[:FRAME_INSPECT_LIMIT]),
+            return_exceptions=True,
+        )
+        for frame, result in zip(frames[:FRAME_INSPECT_LIMIT], looked, strict=True):
+            if isinstance(result, BaseException):
+                continue
+            if result.shows_dog:
+                dog.append(frame)
+            if result.shows_person:
+                person.append(frame)
+            if result.shows_product:
+                product.append(frame)
+
+    return SubjectReferences(product=product, dog=dog, person=person)
+
+
 def _guard_prompts(script: CampaignScript) -> None:
     """The product URL belongs in the script, never in the imagery (FR-008a)."""
     for slide in script.slides:
@@ -256,6 +336,7 @@ async def _build_slide(
     references: list[Path] | None = None,
     fmt: CanvasFormat = STORY_FORMAT,
     cast: str = "",
+    subjects: SubjectReferences | None = None,
 ) -> tuple[Path, SlideVerdict | None]:
     """Background -> HTML layout -> browser screenshot -> verification.
 
@@ -267,14 +348,22 @@ async def _build_slide(
     background = work / "background.jpg"
     prompt = slide.image_prompt
     if slide.has_human:
-        # Without this every slide invents its own owner.
         prompt += llm._cast_clause(cast)
+
+    # The prompt carries the scene; the subjects come from real photographs, so
+    # the dog and the owner stay the same ones rather than being reinvented.
+    if subjects is not None:
+        attached = subjects.for_slide(
+            slide.shows_product, slide.has_dog, slide.has_human
+        )
+    else:
+        attached = list(references or []) if slide.shows_product else []
+
     await llm.generate_image(
         prompt,
         background,
         model=model,
-        # Only slides that actually feature the product get the packshot.
-        references=references if slide.shows_product else None,
+        references=attached or None,
         aspect_ratio=fmt.aspect_ratio,
     )
 
@@ -353,6 +442,7 @@ async def create_campaign(
     _guard_prompts(script)
 
     references = product_references(descriptions)
+    subjects = await subject_references(descriptions)
     results = await asyncio.gather(
         *(
             _build_slide(
@@ -363,6 +453,7 @@ async def create_campaign(
                 references=references,
                 fmt=fmt,
                 cast=script.cast,
+                subjects=subjects,
             )
             for s in script.slides
         ),

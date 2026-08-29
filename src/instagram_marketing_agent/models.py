@@ -33,6 +33,7 @@ class SlideSpec(BaseModel):
     ig_notes: str = ""
     shows_product: bool = False
     has_human: bool = False
+    has_dog: bool = True
 
 
 class CampaignScript(BaseModel):
@@ -104,6 +105,10 @@ class MediaDescription(BaseModel):
     description: str
     transcript: str | None = None
     shows_product: bool = False
+    shows_dog: bool = False
+    shows_person: bool = False
+    # Frames sampled from a video, kept so they can serve as subject references.
+    frames: list[Path] = Field(default_factory=list)
 
     def as_context(self) -> str:
         text = f"{self.path.name}: {self.description}"

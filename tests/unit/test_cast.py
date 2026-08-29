@@ -23,18 +23,26 @@ CAST = "a woman in her 30s, fair skin, short unpainted nails, plain grey sleeve"
 
 
 class TestCastInPrompts:
-    def test_the_clause_names_the_one_person(self):
+    def test_the_clause_admits_only_one_person(self):
         clause = llm._cast_clause(CAST)
-        assert CAST in clause
         assert "no second person" in clause.lower()
+        assert "the same person as in the attached photograph" in clause.lower()
 
-    def test_no_cast_adds_nothing(self):
-        assert llm._cast_clause("") == ""
-        assert llm._cast_clause("   ") == ""
+    def test_the_clause_carries_no_appearance(self):
+        """Appearance comes from the photograph; words make it reinvent."""
+        clause = llm._cast_clause("mostly hands and forearms")
+        for word in ("skin", "hair", "nails", "wardrobe", "wearing"):
+            assert word not in clause.lower()
+
+    def test_the_one_person_rule_holds_without_a_cast(self):
+        assert "no second person" in llm._cast_clause("").lower()
 
     def test_the_script_prompt_demands_a_single_person(self):
         assert "Exactly ONE person" in llm.CAST_RULE
         assert "never a different owner" in llm.CAST_RULE.lower()
+
+    def test_the_script_prompt_forbids_describing_appearance(self):
+        assert "Do NOT describe what they look like" in llm.CAST_RULE
 
 
 class TestCastInVerification:
@@ -115,24 +123,26 @@ class TestCastReachesGeneration:
         monkeypatch.setattr(workflow, "get_products", lambda skus: ([], []))
         return prompts, seen_cast
 
-    def test_slides_with_a_human_carry_the_cast(self, monkeypatch, tmp_path):
+    def test_slides_with_a_human_get_the_one_person_clause(
+        self, monkeypatch, tmp_path
+    ):
         prompts, _ = self._stub(monkeypatch, tmp_path)
         asyncio.run(workflow.create_story_campaign(topic="тема", slide_count=5))
         for index in (2, 4):
-            assert CAST in prompts[index], f"slide {index} lost the cast"
+            assert "Exactly one person" in prompts[index], f"slide {index}"
 
     def test_slides_without_a_human_do_not(self, monkeypatch, tmp_path):
         prompts, _ = self._stub(monkeypatch, tmp_path)
         asyncio.run(workflow.create_story_campaign(topic="тема", slide_count=5))
         for index in (1, 3, 5):
-            assert CAST not in prompts[index]
+            assert "Exactly one person" not in prompts[index]
 
-    def test_every_human_slide_gets_the_same_person(self, monkeypatch, tmp_path):
+    def test_every_human_slide_gets_the_same_instruction(self, monkeypatch, tmp_path):
         prompts, _ = self._stub(monkeypatch, tmp_path, human=(1, 2, 3, 4, 5))
         asyncio.run(workflow.create_story_campaign(topic="тема", slide_count=5))
-        described = {p.split("The single person in this image is:")[1] for p in
-                     prompts.values()}
-        assert len(described) == 1, "slides describe different people"
+        clauses = {p.split("Exactly one person is in this image")[1] for p in
+                   prompts.values()}
+        assert len(clauses) == 1, "slides carry different person instructions"
 
     def test_the_verifier_receives_the_cast(self, monkeypatch, tmp_path):
         _, seen = self._stub(monkeypatch, tmp_path)

@@ -68,14 +68,15 @@ def gemini_client():
 # described up front and repeated verbatim, each image invents a different owner
 # -- different hands, sleeves and skin on every slide of the same story.
 CAST_RULE = (
-    "Exactly ONE person appears across this whole set. Describe them once in "
-    "`cast`: approximate age, build, skin tone, hands and nails, hair, and "
-    "wardrobe (plain and muted -- no patterns, slogans, loud manicure, watches "
-    "or jewellery). Do not name them and do not describe a face in detail; they "
-    "are mostly hands, forearms and partial figure.\n"
-    "Every image that shows a human shows THIS person and no one else. Never a "
-    "second person, never a different owner, never a pair of hands belonging to "
-    "someone else. Mark `has_human` true on exactly those images."
+    "Exactly ONE person appears anywhere in this set, and one dog. Never a "
+    "second person, never a different owner, never a stray extra pair of hands, "
+    "never a different animal.\n"
+    "Do NOT describe what they look like, here or in any image_prompt. Their "
+    "appearance comes from the attached reference photographs, not from words. "
+    "In `cast`, record only how the person appears in frame across the set -- "
+    "for example 'mostly hands and forearms, one partial figure' -- and nothing "
+    "about their face, hair, skin or clothing.\n"
+    "Mark `has_human` true on exactly the images that show a person."
 )
 
 
@@ -105,14 +106,20 @@ def _cast_failures(cast: str) -> str:
 
 
 def _cast_clause(cast: str) -> str:
-    """The line appended to an image prompt so the same person appears."""
-    if not cast.strip():
-        return ""
-    return (
-        f"\n\nThe single person in this image is: {cast.strip()}\n"
-        "Show only this one person -- one pair of hands, one body. No second "
-        "person, no extra hands or arms entering the frame."
+    """The framing note appended when a person is in the image.
+
+    Deliberately carries no appearance: who the person is comes from the
+    attached photograph. Describing them in words is what makes the model
+    invent someone new on each slide.
+    """
+    note = (
+        "\n\nExactly one person is in this image -- one pair of hands, one "
+        "body, the same person as in the attached photograph. No second person, "
+        "no extra hands or arms entering the frame."
     )
+    if cast.strip():
+        note += f"\nHow they appear in frame: {cast.strip()}"
+    return note
 
 
 class _ScriptDraft(BaseModel):
@@ -123,10 +130,17 @@ class _ScriptDraft(BaseModel):
 
 
 class _ImageDescription(BaseModel):
-    """A described input asset, flagged if it shows the product packaging."""
+    """A described input asset, flagged by what it can serve as a reference for.
+
+    The flags decide which real photograph is attached when a slide featuring
+    that subject is generated, so the dog and the owner are reproduced rather
+    than reinvented from a written description.
+    """
 
     description: str
     shows_product: bool
+    shows_dog: bool = False
+    shows_person: bool = False
 
 
 async def describe_image(image_path: str | Path) -> str:
@@ -156,9 +170,15 @@ async def inspect_image(image_path: str | Path) -> _ImageDescription:
                             "Describe this image in detail for someone writing an "
                             "Instagram story about it. Cover the subject, setting, "
                             "colours, mood and any product or packaging visible.\n\n"
-                            "Set shows_product=true only if a product container "
-                            "(bottle, tube, jar, pack) with its own branding is "
-                            "clearly visible and usable as a packshot reference."
+                            "Then flag what this photo could serve as a "
+                            "reference for, judging only whether the subject is "
+                            "clear enough to copy from:\n"
+                            "  shows_product - a product container (bottle, tube, "
+                            "jar, pack) with its own branding is clearly visible\n"
+                            "  shows_dog     - a dog is clearly visible, its face "
+                            "and coat legible\n"
+                            "  shows_person  - a person is visible: hands, arms, "
+                            "or body"
                         ),
                     },
                 ],
@@ -246,17 +266,26 @@ async def generate_script(
         "For each slide give:\n"
         "  index       - 1-based position\n"
         "  role        - hook | tension | solution | proof | offer | cta\n"
-        "  image_prompt- an English prompt for an image model describing the "
-        "scene only. Never include a URL, a web address, or any text to "
-        "render inside the image.\n"
-        "                If the slide features the product, describe the SETTING "
-        "and how the product sits in it (surface, light, angle, what is around "
-        "it). Do NOT describe the packaging, label, logo or brand name: the real "
-        "product photograph is supplied to the image model separately.\n"
+        "  image_prompt- an English prompt describing the SCENE ONLY: the "
+        "setting, the action taking place, the light, the camera angle and "
+        "framing, and what to leave out. Never include a URL, a web address, or "
+        "any text to render inside the image.\n"
+        "                Describe WHAT HAPPENS and WHERE, never WHO or WHAT "
+        "things look like. Real photographs of the dog, the person and the "
+        "product are attached to the image model, and it copies the subjects "
+        "from them. Describing their appearance in words makes it invent a "
+        "different dog, a different owner and a fictional label instead.\n"
+        "                So: no breed, coat colour, eye colour, size, age, "
+        "hair, skin, clothing, packaging or label wording. Refer to them "
+        "plainly as 'the dog', 'the owner', 'the product'. Write the pose and "
+        "the action freely -- 'the dog sits on a wooden bench scratching behind "
+        "its ear, shot at dog level in soft evening light' is right; 'a black "
+        "French bulldog with blue eyes' is wrong.\n"
         "  shows_product- true when the product container should appear in the "
         "image. Typically the solution, offer and cta slides; usually false for "
         "hook and tension, which are about the problem.\n"
         "  has_human   - true when a hand, arm or person is in frame.\n"
+        "  has_dog     - true when the dog is in frame (usually true).\n"
         "  overlay_text- the short copy drawn on the slide, in the brief's "
         "language. REQUIRED on every slide and never empty: a slide with no "
         "words is a dead frame the viewer taps past. Give each slide its own "
@@ -304,14 +333,25 @@ async def generate_script(
     )
 
 
-PRODUCT_FIDELITY_RULE = (
-    "The attached photograph shows the REAL product. Reproduce that exact "
-    "container in the scene: same shape, proportions, cap, colour and label "
-    "artwork. Do not redesign the packaging, do not invent a logo, brand name, "
-    "fruit motif or any other label graphic, and do not substitute a different "
-    "bottle. Keep the product's own text and markings as they appear in the "
-    "photograph. You may relight it and place it naturally in the new scene."
+SUBJECT_FIDELITY_RULE = (
+    "The attached photographs show the REAL subjects of this scene: the product, "
+    "the dog, the person, or several of them. Reproduce each one exactly as "
+    "photographed.\n"
+    "- Product: same container shape, proportions, cap, colour and label "
+    "artwork. Do not redesign the packaging, invent a logo, brand name or label "
+    "graphic, or substitute a different bottle. Keep its own text and markings "
+    "as they appear.\n"
+    "- Dog: the same individual animal. Same breed, size, coat colour and "
+    "markings, same face, same eyes. Do not change the breed or invent a "
+    "different dog.\n"
+    "- Person: the same individual. Same hands, skin, hair and clothing. One "
+    "person only; never add a second.\n"
+    "You may relight the subjects, change their pose and place them naturally in "
+    "the new scene. What must not change is who and what they are."
 )
+
+# Kept for callers that still reference the old name.
+PRODUCT_FIDELITY_RULE = SUBJECT_FIDELITY_RULE
 
 
 async def generate_image(
@@ -333,7 +373,7 @@ async def generate_image(
     text = prompt
     payload: list[dict] = []
     if references:
-        text = f"{prompt}\n\n{PRODUCT_FIDELITY_RULE}"
+        text = f"{prompt}\n\n{SUBJECT_FIDELITY_RULE}"
     payload.append({"type": "text", "text": text})
     for reference in references or []:
         payload.append(

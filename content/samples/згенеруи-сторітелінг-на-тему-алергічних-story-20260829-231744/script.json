@@ -1,0 +1,111 @@
+{
+  "topic": "Згенеруй сторітелінг на тему алергічних реакцій на шкірі, атопічний дерматит у собак у літній період.\nАртикули товарів: ND-IDNS-12, WP-WRIN-50, ND-IMMX-90",
+  "slides": [
+    {
+      "index": 1,
+      "role": "hook",
+      "image_prompt": "Close-up of a black French Bulldog with a white chest patch sitting on a wooden slat bench outdoors in summer, scratching behind its ear with a hind paw, wrinkly face squinting. Whitewashed brick wall and dark charcoal slatted fence behind, green thuja bushes, bright daylight. Candid lifestyle photo, warm pink and green palette.",
+      "overlay_text": "Собака чухається щодня?",
+      "ig_notes": "Без стікерів. Текст великим шрифтом у верхній третині, щоб читалось за 1 секунду.",
+      "shows_product": false
+    },
+    {
+      "index": 2,
+      "role": "tension",
+      "image_prompt": "Top-down close-up of a black dog's front leg and paw resting on a striped grey and cream bedspread, fur around the paw slightly damp and thinned from licking, soft indoor daylight. Intimate, candid home photo.",
+      "overlay_text": "Ми рік думали, що це корм. А це був атопічний дерматит.",
+      "ig_notes": "Poll-стікер: «Теж чухається?» — варіанти «Так, знайомо» / «Поки ні»",
+      "shows_product": false
+    },
+    {
+      "index": 3,
+      "role": "solution",
+      "image_prompt": "A young woman with long light brown hair in a bright pink linen shirt sits on a wooden bench outdoors, holding a shampoo bottle up toward the camera in one hand and a small round jar of wipes in the other. A black French Bulldog in a colourful harness sits beside her. Dark slatted fence, trimmed green shrubs, white brick wall, sunny summer light. Products clearly visible, held at chest height, angled to camera.",
+      "overlay_text": "Купаємо щотижня, а складочки протираємо щодня — так шкіра спокійна",
+      "ig_notes": "Мікро-підказка внизу: «далі →». Без посилання.",
+      "shows_product": true
+    },
+    {
+      "index": 4,
+      "role": "proof",
+      "image_prompt": "Hands gently wiping the facial wrinkles of a calm black French Bulldog sitting on a wooden bench, a small jar of wipes open on the bench beside them, shampoo bottle standing next to it. Soft summer daylight, green bushes and light brick wall blurred behind. Close, documentary-style crop.",
+      "overlay_text": "Влітку пилок і пил осідають на шерсті. Змиваємо — свербіж менший.",
+      "ig_notes": "Можна додати текстовий блок-цитату дерматолога дрібним шрифтом знизу.",
+      "shows_product": true
+    },
+    {
+      "index": 5,
+      "role": "cta",
+      "image_prompt": "A black and white French Bulldog in a pink and purple harness sits attentively on a brown wooden bench, looking up at the camera. Beside it on the armrest stand a shampoo bottle and a small jar of wipes, plus a jar of chewable supplements. Urban backyard with string lights, greenery and a dark fence, evening summer light. Cozy, warm mood.",
+      "overlay_text": "забрати догляд для атопіка",
+      "ig_notes": "Link-стікер на підбірку «Догляд при дерматиті» (ND-IDNS-12, WP-WRIN-50, ND-IMMX-90). Один CTA, більше нічого.",
+      "shows_product": true
+    }
+  ],
+  "products": [
+    {
+      "sku": "ND-IDNS-12",
+      "name": "Шампунь для собак проти свербіння Itchy Dog Natural Dog Company, 360мл",
+      "price": "699.00",
+      "image_url": "",
+      "product_url": "https://healthydoggo.com.ua/shampun-proti-sverbinnya-itchy-dog-natural-dog-company-360ml-nd-idns-12/",
+      "description": "Гіпоалергенна формула шампуню для собак з подразненою шкірою ідеально підходить для змиття подразників з шерсті та шкіри, одночасно надаючи заспокійливий ефект полегшує свербіння шкіри вашого собаки. Наш шампунь для собак не містить сульфатів, парабенів, алкоголю та токсинів. Нічого, крім 100% натуральних, безпечних для домашніх тварин інгредієнтів, які працюють в комплексі, щоб надати вашому улюбленцю чисту шерсть і здорову, загоєну шкіру. Цей шампунь ідеально підходить для собак всіх порід з рецидивуючими або серйозними постійними проблемами шкіри, дерматитами та подразненнями. Об'єм шампуню 360мл. Шампунь Itchy Dog - ідеальний спосіб очистити та вилікувати всіх цуценят, особливо якщо вони відчувають свербіж шкіри та почервоніння, викликане алергенами, укусами комах та іншими подразниками. Основні компоненти : Лавандова олія - протимікробні, протигрибкові та протизапальні властивості заспокоюють свербіж, сухість шкіри та від стресових факторів навколишнього середовища Олія жожоба - протизапальний засіб, який зволожує потріскану шкіру та зменшує почервоніння, викликане сухістю шкіри Алое Вера - сприяє загоєнню опіків, саден, порізів та подразнень, одночасно глибоко зволожуючи шкіру Повний список інгредієнтів : вода, кокамідопропілбетаїн, децилполіглюкозид, DOE-120, гліцерин, феноксіетанол, лавандова олія, олія евкаліпта, олія жожоба, гель алое вера, порошок водоростей, бікарбонат натрію."
+    },
+    {
+      "sku": "WP-WRIN-50",
+      "name": "Серветки для складочок Natural Dog Company Wrinkle Wipes, 50шт",
+      "price": "599.00",
+      "image_url": "https://healthydoggo.com.ua/content/images/35/servetky-dlia-skladochok-natural-dog-company-wrinkle-wipes-50sht-13798797324415_+3b68bc60b4.png",
+      "product_url": "https://healthydoggo.com.ua/servetky-dlia-skladochok-natural-dog-company-wrinkle-wipes-50sht/",
+      "description": "Складочки на мордочці та тілі у собак дуже схильні до інфекцій і подразнень, але за допомогою серветок Wrinkle Wipes ви зможете зменшити запалення та полікувати проблеми складочок! Wrinkle Wipes заспокоюють і лікують такі прояви, як дерматит та запалення складочок, грибкові інфекції, акне у собак та бактеріальні інфекції. Wrinkle Wipes містять подібні активні інгредієнти, що й цілющий бальзам, але надають більш чистий і простий спосіб нанесення. Вам не потрібно буде мити руки після використання цих серветок для вашої собаки. І завдяки заздалегідь дозованій кількості інгредієнтів на кожній серветці, вам ніколи не доведеться переживати, що ви нанесете забагато або замало цілющих компонентів. Крім того, цей продукт не розтопиться, як це відбувається з нашими бальзамами при високій температурі, тому він більш стійкий в усіх умовах зберігання!"
+    },
+    {
+      "sku": "ND-IMMX-90",
+      "name": "Вітамінний комплекс проти алергії та зуду Allergy & Itch Defense Natural Dog Company, 90шт в банці",
+      "price": "1450.00",
+      "image_url": "",
+      "product_url": "https://healthydoggo.com.ua/vitaminnyi-kompleks-dlia-imunitetu-proty-alerhii-aller-immune-natural-dog-company-90sht-v-bantsi/",
+      "description": "Підтримуйте імунну систему вашої собаки! Жувальні вітаміни Aller-Immune допомагають полегшити симптоми, спричинені загальними та сезонними алергіями, такими як харчові алергени, трава, пилок та інші зовнішні чинники. Ці вітамінні добавки мають повністю натуральний склад, який ефективно бореться з алергією! Вітамінні добавки: підтримують імунну систему собаки підвищують здоровий рівень гістаміну захищають від алергенів навколишнього середовища діють на клітинному рівні Ця ретельно розроблена беззернова формула містить натуральні інгредієнти та не містить штучних ароматизаторів чи консервантів. Aller-Immune підтримує здоров’я кишечника, щоб ваш пухнастий друг залишався здоровим і щасливим. Основні інгредієнти: Colostrum (Молозиво) - наповнене жирними кислотами Омега-3, які підтримують здоров'я шкіри та нормальну реакцію запалення. Олія лосося - наповнена жирними кислотами, які допомагають підтримувати функцію імунної системи, здоров’я шкіри та шерст.і Яблучний оцет - допомагає зменшити випадкові запалення. Органічний астрагал - підтримує імунну систему, дихальну систему та систему кровообігу. Ехінацея - допомагає зміцнити здоров'я шкіри. Органічна куркума - сприяє рухливості суглобів. Гриби чага (Chaga mashrooms) - захищає здорові клітини від пошкоджень, викликаних вільними радикалами. Аскорбінова кислота (вітамін С) - антиоксидант, який допомагає захистити клітини від впливу вільних радикалів. Цинк - забезпечує підтримку імунної системи та функції щитовидної залози. Селен - забезпечує антиоксидантний захист. Запатентована пробіотична суміш - забезпечує цілеспрямовану підтримку здорової кишкової флори та функції імунної системи. Неактивні інгредієнти: тростинна патока, нутове борошно, змішані токофероли, натуральний ароматизатор, плазмовий порошок, картопляне борошно, соняшниковий лецитин, крохмаль тапіоки, рослинний гліцерин. Термін зберігання після відкриття до 8 місяців."
+    }
+  ],
+  "product_url": "https://healthydoggo.com.ua/shampun-proti-sverbinnya-itchy-dog-natural-dog-company-360ml-nd-idns-12/",
+  "missing_skus": [],
+  "failed_slides": [],
+  "verdicts": [
+    {
+      "index": 1,
+      "passed": true,
+      "issues": [],
+      "notes": "Text panel is compact (~245px tall), inset from both edges, sits in the hook zone without touching the dog's face or body, and displays the exact copy with good contrast (brown text on light translucent card)."
+    },
+    {
+      "index": 2,
+      "passed": true,
+      "issues": [],
+      "notes": "Text panel is inset from both edges, sits within the safe zone (~y=300-460), height well under the 518px limit, and does not overlap the dog's paw or face. Copy matches exactly, with the accent phrase in pink for emphasis and legible brown text on white plate."
+    },
+    {
+      "index": 3,
+      "passed": true,
+      "issues": [],
+      "notes": "White rounded text panel sits in the hook zone (~y=270–440), well within the 1670px limit and inset from both edges with visible margins. It does not touch the dog's face or the products, which appear lower in the subject zone. Copy matches exactly, with the accent phrase in turquoise on a white background (approved pair), fully readable. Layout reads cleanly at a glance."
+    },
+    {
+      "index": 4,
+      "passed": true,
+      "issues": [],
+      "notes": "Text panel is inset from both edges, sits within the hook zone (~y=280–440), well under the 518px height limit, and does not touch the dog's face or the product bottles below. Copy matches exactly, with the accent phrase correctly colored turquoise. Contrast against the beige/white panel is good. Layout is balanced and readable."
+    },
+    {
+      "index": 5,
+      "passed": true,
+      "issues": [],
+      "notes": "Turquoise pill CTA text 'ЗАБРАТИ ДОГЛЯД ДЛЯ АТОПІКА' is inset from both edges, sits in the hook zone above the dog and products without touching or covering them, height well under 518px, text is legible white-on-turquoise, and copy matches exactly."
+    }
+  ],
+  "product_references": [
+    "/Users/sweetbun.dev/Developer/instagram-storytelling/content/input/IMG_1803.HEIC",
+    "/Users/sweetbun.dev/Developer/instagram-storytelling/content/input/IMG_1823.HEIC"
+  ],
+  "format": "story"
+}

@@ -100,6 +100,17 @@ Around a sixth of the catalogue has no image URL. A photo in `content/input/` is
 as a fallback only when the brief names a single product: with several SKUs there is no way
 to tell which one a loose photo depicts, and guessing puts the wrong packaging on a frame.
 
+## Subjects come from photographs, not from words
+
+An image prompt describes the **scene**: the setting, the action, the light, the framing and
+what to leave out. It never describes what the dog, the owner or the product *look like* —
+no breed, coat, eye colour, hair, clothing or label wording.
+
+Appearance comes from real photographs attached to the generation, picked from your input
+photos and from the frames already sampled out of a supplied video. A subject described in
+words is a subject the model reinvents: a different dog on every slide, a fictional label
+on every bottle.
+
 ## One person per set
 
 A campaign or lifestyle set defines a single `cast` — one person, described once by age,
