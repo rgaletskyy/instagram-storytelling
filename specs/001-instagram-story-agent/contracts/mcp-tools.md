@@ -124,9 +124,9 @@ Returns `""` when the file carries no audio track.
 
 ### `describe_video`
 ```python
-async def describe_video(video_path: str, frame_count: int = 8) -> str
+async def describe_video(video_path: str, frame_count: int = 10) -> str
 ```
-ffmpeg extracts 5–10 frames → `describe_image` per frame → merged with the transcript (FR-004).
+ffmpeg samples frames evenly across the clip → `describe_image` per frame → merged with the transcript (FR-004). `frame_count` is clamped to 5–10; the rate is derived from the clip's duration so a long video is covered end to end, not just its opening seconds (FR-004a).
 
 ### `save_project`
 ```python

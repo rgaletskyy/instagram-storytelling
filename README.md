@@ -29,7 +29,8 @@ Put your source photos and a `topic.md` brief in `content/input/`; results land 
 
 Photos may be JPEG, PNG, WebP or **HEIC** straight off a phone; HEIC is converted and
 oversized images are downscaled before they reach the vision API. Video (`.mov`, `.mp4`)
-is sampled for frames and transcribed, and needs ffmpeg.
+is sampled for frames and transcribed, and needs ffmpeg. Sampling takes up to 10 frames
+spread across the whole clip.
 
 ## Usage
 

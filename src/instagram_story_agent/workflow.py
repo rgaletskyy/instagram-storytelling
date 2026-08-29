@@ -16,6 +16,7 @@ from . import ffmpeg, llm, slide_html
 from .config import (
     DEFAULT_LIFESTYLE_IMAGES,
     DEFAULT_SLIDES,
+    DEFAULT_VIDEO_FRAMES,
     FORMATS,
     GEMINI_IMAGE_PRO_MODEL,
     IMAGE_SUFFIXES,
@@ -102,7 +103,9 @@ def _input_files(input_dir: Path) -> tuple[list[Path], list[Path]]:
     return images, videos
 
 
-async def describe_video(video: Path, frame_count: int = 8) -> MediaDescription:
+async def describe_video(
+    video: Path, frame_count: int = DEFAULT_VIDEO_FRAMES
+) -> MediaDescription:
     """Frames described one by one, merged with the transcript."""
     with tempfile.TemporaryDirectory() as tmp:
         tmp_dir = Path(tmp)

@@ -145,6 +145,12 @@ FORMATS = {f.name: f for f in (STORY_FORMAT, POST_FORMAT, LIFESTYLE_FORMAT)}
 
 VERIFY_RETRIES = 1
 
+# Video sampling: enough frames to follow what happens in a clip, capped so a
+# long video does not fan out into dozens of vision calls.
+MIN_VIDEO_FRAMES = 5
+MAX_VIDEO_FRAMES = 10
+DEFAULT_VIDEO_FRAMES = MAX_VIDEO_FRAMES
+
 # Lifestyle sets: the brief asks for 6-8 frames per product, but a run defaults
 # to a smaller set because each frame is a separate generation.
 DEFAULT_LIFESTYLE_IMAGES = 3

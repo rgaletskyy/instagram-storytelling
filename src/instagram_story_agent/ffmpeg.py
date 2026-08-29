@@ -9,9 +9,15 @@ from __future__ import annotations
 
 import asyncio
 import shutil
+import subprocess
 from pathlib import Path
 
-from .config import FFMPEG_BIN, FFPROBE_BIN
+from .config import (
+    FFMPEG_BIN,
+    FFPROBE_BIN,
+    MAX_VIDEO_FRAMES,
+    MIN_VIDEO_FRAMES,
+)
 
 
 class FFmpegMissingError(RuntimeError):
@@ -89,17 +95,77 @@ async def extract_audio(video: Path, out_path: Path) -> Path | None:
     return out_path
 
 
-async def extract_frames(video: Path, out_dir: Path, count: int = 8) -> list[Path]:
-    """Sample `count` frames evenly across the video."""
+def _probe(video: Path, entry: str) -> str:
+    """Read one ffprobe field. Returns "" when ffprobe is absent or fails."""
+    probe = shutil.which(FFPROBE_BIN) or (
+        FFPROBE_BIN if Path(FFPROBE_BIN).is_file() else None
+    )
+    if not probe:
+        return ""
+    try:
+        result = subprocess.run(
+            [probe, "-v", "error", "-show_entries", entry,
+             "-of", "default=noprint_wrappers=1:nokey=1", str(video)],
+            capture_output=True,
+            text=True,
+            timeout=60,
+            check=False,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return ""
+    return result.stdout.strip().splitlines()[0] if result.stdout.strip() else ""
+
+
+def duration(video: Path) -> float:
+    """Length of the clip in seconds, or 0.0 when it cannot be determined."""
+    try:
+        return float(_probe(video, "format=duration"))
+    except ValueError:
+        return 0.0
+
+
+async def extract_frames(
+    video: Path, out_dir: Path, count: int = MAX_VIDEO_FRAMES
+) -> list[Path]:
+    """Sample up to `count` frames spread across the whole video.
+
+    `count` is clamped to MIN_VIDEO_FRAMES..MAX_VIDEO_FRAMES so a long clip
+    cannot fan out into dozens of vision calls.
+
+    The rate is derived from the clip's duration. A fixed rate samples only the
+    opening seconds: at fps=1/2 an eight-frame cap is filled by the first 16
+    seconds, and everything after that is never looked at.
+    """
+    count = max(MIN_VIDEO_FRAMES, min(count, MAX_VIDEO_FRAMES))
     out_dir.mkdir(parents=True, exist_ok=True)
     pattern = out_dir / "frame_%02d.jpg"
+
+    seconds = duration(video)
+    if seconds > 0:
+        # Land inside each of `count` slices rather than exactly on the final
+        # frame, which a clip may not have.
+        rate = count / seconds
+        video_filter = f"fps={rate:.6f}"
+    else:
+        # Unknown duration: fall back to scene-change picks.
+        video_filter = "thumbnail"
+
     await _run(
         "-i",
         str(video),
         "-vf",
-        "thumbnail,fps=1/2",
+        video_filter,
         "-frames:v",
         str(count),
+        "-q:v",
+        "3",
         str(pattern),
     )
-    return sorted(out_dir.glob("frame_*.jpg"))
+
+    frames = sorted(out_dir.glob("frame_*.jpg"))
+    if not frames and seconds > 0:
+        # Some containers report a duration the stream does not honour.
+        await _run("-i", str(video), "-vf", "thumbnail",
+                   "-frames:v", str(count), "-q:v", "3", str(pattern))
+        frames = sorted(out_dir.glob("frame_*.jpg"))
+    return frames[:count]

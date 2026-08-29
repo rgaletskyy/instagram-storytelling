@@ -17,6 +17,7 @@ from . import ffmpeg, llm, slide_html, workflow
 from .config import (
     DEFAULT_LIFESTYLE_IMAGES,
     DEFAULT_SLIDES,
+    DEFAULT_VIDEO_FRAMES,
     DESIGN_GUIDELINES,
     FORMATS,
     LIFESTYLE_BRIEF,
@@ -283,8 +284,14 @@ async def transcribe_video(video_path: str) -> str:
 
 @mcp.tool()
 @_reporting
-async def describe_video(video_path: str, frame_count: int = 8) -> str:
-    """Describe a video from sampled frames plus its transcript."""
+async def describe_video(
+    video_path: str, frame_count: int = DEFAULT_VIDEO_FRAMES
+) -> str:
+    """Describe a video from frames sampled across it, plus its transcript.
+
+    `frame_count` is clamped to 5-10: enough to follow the clip, capped so a
+    long video does not fan out into dozens of vision calls.
+    """
     described = await workflow.describe_video(Path(video_path), frame_count)
     return described.as_context()
 

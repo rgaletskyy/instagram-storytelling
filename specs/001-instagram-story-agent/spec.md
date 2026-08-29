@@ -76,6 +76,7 @@ After reviewing a generated campaign, the user is unhappy with a single slide. T
 - **FR-002**: System MUST read input media and the topic brief from the input content folder and write all results to the output content folder.
 - **FR-003**: System MUST produce a written description of each supplied image for use as context when writing the campaign script.
 - **FR-004**: System MUST produce a combined description of a supplied video, covering both what is shown across the video and what is spoken in it.
+- **FR-004a**: System MUST sample between 5 and 10 frames from a video, spread across its full duration rather than clustered at the start, and MUST NOT exceed 10 regardless of clip length.
 - **FR-005**: System MUST look up each SKU taken from the topic brief in the product catalogue and return, for each match, a shortened product name, description, image reference, price and product page URL.
 - **FR-006a2**: System MUST deliver exactly the requested number of slides, enforcing it rather than relying on the script model to honour the request.
 - **FR-006**: System MUST generate a campaign script that assigns each slide a background-image prompt, the overlay text for that slide, and notes on Instagram interactive elements to add at posting time.
