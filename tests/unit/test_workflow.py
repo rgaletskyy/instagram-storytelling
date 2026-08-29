@@ -529,3 +529,43 @@ class TestVideoArtifacts:
             asyncio.run(workflow.describe_video(video, artifacts_dir=artifacts))
 
         assert sorted(p.name for p in artifacts.iterdir()) == ["first", "second"]
+
+
+def test_a_failed_retry_keeps_the_render_that_worked(stubbed, monkeypatch):
+    """A slide that rendered once must not be lost when the retry errors."""
+    attempts = {"n": 0}
+
+    async def flaky_html(slide, background, issues=None, fmt=None):
+        if slide.index == 1:
+            attempts["n"] += 1
+            if attempts["n"] > 1:
+                raise RuntimeError("no layout returned for slide 1")
+        return "<html></html>"
+
+    async def rejects_first(image, slide, fmt=None, cast=""):
+        return SlideVerdict(
+            index=slide.index, passed=slide.index != 1, issues=["try again"]
+        )
+
+    monkeypatch.setattr(llm, "generate_slide_html", flaky_html)
+    monkeypatch.setattr(llm, "verify_slide", rejects_first)
+
+    campaign = asyncio.run(
+        workflow.create_story_campaign(topic="тема", slide_count=5)
+    )
+    assert len(campaign.slide_paths) == 5
+    assert campaign.failed_slides == []
+
+
+def test_a_first_attempt_that_fails_is_still_an_error(stubbed, monkeypatch):
+    """Nothing rendered means nothing to keep."""
+
+    async def always_fail(slide, background, issues=None, fmt=None):
+        raise RuntimeError("no layout returned")
+
+    monkeypatch.setattr(llm, "generate_slide_html", always_fail)
+    campaign = asyncio.run(
+        workflow.create_story_campaign(topic="тема", slide_count=5)
+    )
+    assert campaign.slide_paths == []
+    assert len(campaign.failed_slides) == 5

@@ -372,8 +372,21 @@ async def _build_slide(
     issues: list[str] = []
 
     for attempt in range(VERIFY_RETRIES + 1):
-        html = await llm.generate_slide_html(slide, background, issues or None, fmt)
-        await slide_html.screenshot(html, out_path, work, fmt)
+        try:
+            html = await llm.generate_slide_html(
+                slide, background, issues or None, fmt
+            )
+            await slide_html.screenshot(html, out_path, work, fmt)
+        except Exception as exc:  # noqa: BLE001
+            if out_path.exists():
+                # A retry that fails must not discard the render that worked.
+                logger.warning(
+                    "slide %s: retry failed, keeping the earlier render: %s",
+                    slide.index,
+                    exc,
+                )
+                break
+            raise
         if not verify:
             break
         verdict = await llm.verify_slide(out_path, slide, fmt, cast)
@@ -608,13 +621,23 @@ async def _build_frame(
                 + "\n".join(f"- {i}" for i in issues)
             )
 
-        await llm.generate_image(
-            prompt,
-            out_path,
-            references=references or None,
-            aspect_ratio=LIFESTYLE_FORMAT.aspect_ratio,
-        )
-        slide_html.normalize(out_path, LIFESTYLE_FORMAT)
+        try:
+            await llm.generate_image(
+                prompt,
+                out_path,
+                references=references or None,
+                aspect_ratio=LIFESTYLE_FORMAT.aspect_ratio,
+            )
+            slide_html.normalize(out_path, LIFESTYLE_FORMAT)
+        except Exception as exc:  # noqa: BLE001
+            if out_path.exists():
+                logger.warning(
+                    "frame %s: retry failed, keeping the earlier render: %s",
+                    shot.index,
+                    exc,
+                )
+                break
+            raise
         if not verify:
             break
         verdict = await llm.verify_lifestyle_frame(out_path, shot, cast)

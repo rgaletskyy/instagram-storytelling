@@ -147,8 +147,8 @@ VERIFY_RETRIES = 1
 
 # Video sampling: enough frames to follow what happens in a clip, capped so a
 # long video does not fan out into dozens of vision calls.
-MIN_VIDEO_FRAMES = 5
-MAX_VIDEO_FRAMES = 8
+MIN_VIDEO_FRAMES = 4
+MAX_VIDEO_FRAMES = 7
 DEFAULT_VIDEO_FRAMES = MAX_VIDEO_FRAMES
 
 # Lifestyle sets: the brief asks for 6-8 frames per product, but a run defaults
@@ -160,7 +160,7 @@ REFERENCE_LIMIT = 3
 FRAME_INSPECT_LIMIT = 4
 
 DEFAULT_LIFESTYLE_IMAGES = 3
-MAX_LIFESTYLE_IMAGES = 8
+MAX_LIFESTYLE_IMAGES = 5
 
 MIN_SLIDES = 3
 MAX_SLIDES = 7
