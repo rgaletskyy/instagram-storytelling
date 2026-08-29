@@ -35,7 +35,12 @@ mcp = MCPServer(
 # Failures we saw coming -- a bad slide count, a missing file, no ffmpeg. Raised as
 # ToolError so the client sees the actual message; anything else is a crash and the
 # SDK deliberately withholds its text.
-_ANTICIPATED = (ValueError, FileNotFoundError, ffmpeg.FFmpegMissingError)
+_ANTICIPATED = (
+    ValueError,
+    FileNotFoundError,
+    RuntimeError,
+    ffmpeg.FFmpegMissingError,
+)
 
 
 def _reporting(fn: Callable) -> Callable:

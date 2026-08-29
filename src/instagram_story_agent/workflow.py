@@ -147,16 +147,34 @@ async def describe_inputs(input_dir: Path | None = None) -> list[MediaDescriptio
     image_results = await asyncio.gather(
         *(llm.inspect_image(p) for p in images), return_exceptions=True
     )
-    described: list[MediaDescription] = [
-        MediaDescription(
-            path=path,
-            kind="image",
-            description=result.description,
-            shows_product=result.shows_product,
+
+    described: list[MediaDescription] = []
+    refused: list[str] = []
+    for path, result in zip(images, image_results, strict=True):
+        if isinstance(result, BaseException):
+            refused.append(f"{path.name}: {type(result).__name__}: {result}")
+            logger.warning("could not describe %s: %s", path.name, result)
+            continue
+        described.append(
+            MediaDescription(
+                path=path,
+                kind="image",
+                description=result.description,
+                shows_product=result.shows_product,
+            )
         )
-        for path, result in zip(images, image_results, strict=True)
-        if not isinstance(result, BaseException)
-    ]
+
+    # Every photo failing is not a partial result -- the script would be written
+    # with no sight of the input at all, which looks like success and is not.
+    if images and not described:
+        raise RuntimeError(
+            "none of the supplied images could be described, so the campaign "
+            "would be written without seeing them:\n  "
+            + "\n  ".join(refused[:5])
+        )
+    if refused:
+        logger.warning("%d of %d images could not be described", len(refused), len(images))
+
     for video in videos:
         described.append(await describe_video(video))
     return described

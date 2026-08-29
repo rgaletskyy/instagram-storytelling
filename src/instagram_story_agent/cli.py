@@ -97,7 +97,7 @@ def main() -> int:
     except FFmpegMissingError as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 2
-    except (ValueError, FileNotFoundError) as exc:
+    except (ValueError, FileNotFoundError, RuntimeError) as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1
 

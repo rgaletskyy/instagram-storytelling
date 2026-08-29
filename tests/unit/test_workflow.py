@@ -405,3 +405,32 @@ def test_a_failed_transcription_does_not_sink_the_campaign(monkeypatch, tmp_path
     assert described.kind == "video"
     assert "a frame" in described.description
     assert described.transcript is None
+
+
+def test_every_image_failing_is_reported_not_ignored(monkeypatch, tmp_path):
+    """A script written without seeing the photos looks like success and is not."""
+    for name in ("a.png", "b.png"):
+        (tmp_path / name).write_bytes(b"png")
+
+    async def refuse(_path):
+        raise RuntimeError("400 usage limit reached")
+
+    monkeypatch.setattr(llm, "inspect_image", refuse)
+    with pytest.raises(RuntimeError, match="none of the supplied images"):
+        asyncio.run(workflow.describe_inputs(tmp_path))
+
+
+def test_a_partial_failure_keeps_the_photos_that_worked(monkeypatch, tmp_path):
+    for name in ("a.png", "b.png"):
+        (tmp_path / name).write_bytes(b"png")
+
+    async def flaky(path):
+        from instagram_story_agent.llm import _ImageDescription
+
+        if path.name == "a.png":
+            raise RuntimeError("transient")
+        return _ImageDescription(description="described", shows_product=False)
+
+    monkeypatch.setattr(llm, "inspect_image", flaky)
+    described = asyncio.run(workflow.describe_inputs(tmp_path))
+    assert [d.path.name for d in described] == ["b.png"]
