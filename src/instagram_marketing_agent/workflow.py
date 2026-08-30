@@ -255,9 +255,15 @@ class SubjectReferences:
     product: list[Path] = field(default_factory=list)
     dog: list[Path] = field(default_factory=list)
     person: list[Path] = field(default_factory=list)
+    # Frames from the supplied video, for scenes that recreate what it shows.
+    footage: list[Path] = field(default_factory=list)
 
     def for_slide(
-        self, shows_product: bool, has_dog: bool, has_human: bool
+        self,
+        shows_product: bool,
+        has_dog: bool,
+        has_human: bool,
+        from_footage: bool = False,
     ) -> list[Path]:
         """The references to attach, capped so the model is not swamped.
 
@@ -266,6 +272,9 @@ class SubjectReferences:
         then applies its invention to all of them.
         """
         chosen: list[Path] = []
+        if from_footage:
+            # First: the scene is that shot, so its look leads.
+            chosen += self.footage[:1]
         if shows_product:
             chosen += self.product[:PRODUCT_REFERENCE_LIMIT]
         if has_dog:
@@ -341,7 +350,9 @@ async def subject_references(
                 # A packshot, when we have one, always outranks a video frame.
                 product.append(frame)
 
-    return SubjectReferences(product=product, dog=dog, person=person)
+    return SubjectReferences(
+        product=product, dog=dog, person=person, footage=frames
+    )
 
 
 def _guard_prompts(script: CampaignScript) -> None:
@@ -380,7 +391,10 @@ async def _build_slide(
     # the dog and the owner stay the same ones rather than being reinvented.
     if subjects is not None:
         attached = subjects.for_slide(
-            slide.shows_product, slide.has_dog, slide.has_human
+            slide.shows_product,
+            slide.has_dog,
+            slide.has_human,
+            slide.from_footage,
         )
     else:
         attached = list(references or []) if slide.shows_product else []
@@ -549,18 +563,21 @@ async def regenerate_slide(
     if _URL_RE.search(revised.image_prompt):
         raise ValueError("revised image_prompt contains a URL")
 
-    # Reuse the packshots recorded at generation time rather than re-describing
-    # every input image for a single-slide change.
-    references = [
-        Path(r) for r in payload.get("product_references", []) if Path(r).exists()
-    ]
+    # Everything the campaign generated from is still in source/, so a
+    # single-slide redo reuses it rather than re-describing every input.
+    source = out_dir / "source"
+    subjects = SubjectReferences(
+        product=sorted((source / "packshots").glob("*"))
+        or [Path(r) for r in payload.get("product_references", []) if Path(r).exists()],
+        footage=sorted(source.glob("*/frame_*.jpg")),
+    )
     rendered, _verdict = await _build_slide(
         revised,
         out_dir,
         GEMINI_IMAGE_PRO_MODEL,
-        references=references,
         fmt=FORMATS.get(payload.get("format", "story"), STORY_FORMAT),
         cast=script.cast,
+        subjects=subjects,
     )
 
     # Rewrite only this entry, preserving everything else in the file.

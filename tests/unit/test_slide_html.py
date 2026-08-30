@@ -1,5 +1,7 @@
 """HTML cleanup and the browser screenshot contract."""
 
+from pathlib import Path
+
 import pytest
 
 from instagram_marketing_agent import slide_html
@@ -87,4 +89,16 @@ async def test_a_page_whose_background_loads_is_fine(tmp_path):
 async def test_a_page_with_no_images_at_all_is_fine(tmp_path):
     page = "<html><body style='margin:0;background:#333'></body></html>"
     out = await slide_html.screenshot(page, tmp_path / "s.jpg", tmp_path)
+    assert out.exists()
+
+
+async def test_a_relative_path_still_renders(tmp_path, monkeypatch):
+    """file:// URIs need absolute paths; a relative project dir must still work."""
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "proj").mkdir()
+    page = "<html><body style='margin:0;background:#222'></body></html>"
+    out = await slide_html.screenshot(
+        page, Path("proj/s.jpg"), Path("proj")
+    )
+    assert out.is_absolute()
     assert out.exists()

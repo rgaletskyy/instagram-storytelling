@@ -48,6 +48,10 @@ async def screenshot(
     background.jpg resolve, and loaded over file:// rather than set_content --
     set_content has no base URL, so relative images would silently fail.
     """
+    # file:// URIs demand absolute paths, so a caller passing a relative
+    # project directory must not break the render.
+    out_path = out_path.resolve()
+    base_dir = base_dir.resolve()
     out_path.parent.mkdir(parents=True, exist_ok=True)
     base_dir.mkdir(parents=True, exist_ok=True)
     page_file = base_dir / f".{out_path.stem}.html"

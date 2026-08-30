@@ -34,6 +34,9 @@ class SlideSpec(BaseModel):
     shows_product: bool = False
     has_human: bool = False
     has_dog: bool = True
+    # True when the scene recreates something the supplied video shows, so a
+    # frame is attached and the look is copied rather than imagined.
+    from_footage: bool = False
 
 
 class CampaignScript(BaseModel):
