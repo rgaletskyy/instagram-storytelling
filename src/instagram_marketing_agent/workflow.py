@@ -481,7 +481,9 @@ async def create_campaign(
     _guard_prompts(script)
 
     references = product_references(descriptions)
-    packshots = catalogue_packshots(products, out_dir / ".packshots")
+    # Kept beside the video frames: these are what the packaging was copied
+    # from, so a slide with a wrong label can be checked against its source.
+    packshots = catalogue_packshots(products, out_dir / "source" / "packshots")
     subjects = await subject_references(descriptions, packshots)
     results = await asyncio.gather(
         *(

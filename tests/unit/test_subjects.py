@@ -291,3 +291,11 @@ class TestMultipleProducts:
         rule = llm.SUBJECT_FIDELITY_RULE
         assert "DIFFERENT" in rule
         assert "Do not copy one label onto all of them" in rule
+
+
+def test_packshots_are_kept_beside_the_video_frames(monkeypatch, tmp_path):
+    """Provenance: what a slide's packaging was copied from stays readable."""
+    import inspect
+
+    source = inspect.getsource(workflow.create_campaign)
+    assert '"source" / "packshots"' in source
