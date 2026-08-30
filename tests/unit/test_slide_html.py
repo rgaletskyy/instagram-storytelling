@@ -66,3 +66,25 @@ def test_the_two_formats_differ_only_in_artboard():
     assert POST_FORMAT.width == POST_FORMAT.height == 1080
     # The text budget is a fraction, so it scales with the artboard.
     assert POST_FORMAT.text_block_max_h < STORY_FORMAT.text_block_max_h
+
+
+async def test_a_background_that_did_not_load_is_an_error(tmp_path):
+    """A missing background renders as a blank canvas with a placeholder icon."""
+    page = "<html><body style='margin:0'><img src='background.jpg'></body></html>"
+    with pytest.raises(slide_html.BackgroundMissingError, match="background.jpg"):
+        await slide_html.screenshot(page, tmp_path / "s.jpg", tmp_path)
+
+
+async def test_a_page_whose_background_loads_is_fine(tmp_path):
+    from PIL import Image
+
+    Image.new("RGB", (100, 100), "red").save(tmp_path / "background.jpg")
+    page = "<html><body style='margin:0'><img src='background.jpg'></body></html>"
+    out = await slide_html.screenshot(page, tmp_path / "s.jpg", tmp_path)
+    assert out.exists()
+
+
+async def test_a_page_with_no_images_at_all_is_fine(tmp_path):
+    page = "<html><body style='margin:0;background:#333'></body></html>"
+    out = await slide_html.screenshot(page, tmp_path / "s.jpg", tmp_path)
+    assert out.exists()

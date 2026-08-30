@@ -16,6 +16,20 @@ from .config import SCREENSHOT_QUALITY, STORY_FORMAT, CanvasFormat
 
 _FENCE_RE = re.compile(r"^\s*```(?:html)?\s*|\s*```\s*$", re.IGNORECASE)
 
+# Any <img> that failed to load, plus any CSS background whose url() 404s.
+# naturalWidth is 0 for an image the browser could not decode.
+BROKEN_IMAGE_PROBE = """() => {
+  const broken = [];
+  for (const img of document.images) {
+    if (!img.complete || img.naturalWidth === 0) broken.push(img.getAttribute('src'));
+  }
+  return broken.length ? broken.join(', ') : null;
+}"""
+
+
+class BackgroundMissingError(RuntimeError):
+    """The rendered page could not load its background image."""
+
 
 def clean_html(raw: str) -> str:
     """Strip markdown fences a model may wrap the document in."""
@@ -49,6 +63,16 @@ async def screenshot(
             await page.goto(page_file.as_uri(), wait_until="networkidle")
             # Webfonts resolve after load; screenshotting early yields fallbacks.
             await page.evaluate("() => document.fonts.ready")
+
+            broken = await page.evaluate(BROKEN_IMAGE_PROBE)
+            if broken:
+                # A background that did not load renders as a blank canvas with
+                # a placeholder icon. Raising here lets the caller retry rather
+                # than shipping an empty slide that only the verifier catches.
+                raise BackgroundMissingError(
+                    f"the page references {broken} but it did not load; "
+                    f"the background must be referenced as 'background.jpg'"
+                )
             await page.screenshot(
                 path=str(out_path),
                 type="jpeg",
