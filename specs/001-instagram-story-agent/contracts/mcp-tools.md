@@ -140,7 +140,7 @@ Writes slides + `script.json` to `content/output/<slug>-<YYYYMMDD-HHMMSS>/`, ret
 
 | URI | MIME | Backing file |
 |---|---|---|
-| `content://story-design-guidelines.md` | `text/markdown` | `src/resources/story-design-guidelines.md` |
+| `content://slide-design-guidelines.md` | `text/markdown` | `src/resources/slide-design-guidelines.md` |
 | `content://story-telling-rules.md` | `text/markdown` | `src/resources/story-telling-rules.md` |
 | `content://lifestyle-content-brief.md` | `text/markdown` | `src/resources/lifestyle-content-brief.md` |
 

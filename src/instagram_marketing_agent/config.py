@@ -22,7 +22,7 @@ TOPIC_FILE = INPUT_DIR / "topic.md"
 _PRODUCTS_REAL = RESOURCES_DIR / "products.xlsx"
 _PRODUCTS_SAMPLE = RESOURCES_DIR / "products.sample.xlsx"
 PRODUCTS_XLSX = _PRODUCTS_REAL if _PRODUCTS_REAL.exists() else _PRODUCTS_SAMPLE
-DESIGN_GUIDELINES = RESOURCES_DIR / "story-design-guidelines.md"
+DESIGN_GUIDELINES = RESOURCES_DIR / "slide-design-guidelines.md"
 STORYTELLING_RULES = RESOURCES_DIR / "story-telling-rules.md"
 LIFESTYLE_BRIEF = RESOURCES_DIR / "lifestyle-content-brief.md"
 # The decorative element library described in section 9 of the design
@@ -64,7 +64,7 @@ GEMINI_IMAGE_PRO_MODEL = "gemini-3-pro-image"
 GEMINI_TRANSCRIBE_MODEL = "gemini-3.5-transcribe"
 
 # --- Canvas ------------------------------------------------------------------
-# Story dimensions come from src/resources/story-design-guidelines.md section 1.
+# Story dimensions come from src/resources/slide-design-guidelines.md section 1.
 # A post is the same design language on a square artboard.
 
 CANVAS_W = 1080

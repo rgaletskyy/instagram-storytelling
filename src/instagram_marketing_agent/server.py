@@ -321,7 +321,7 @@ async def describe_video(
 
 
 @mcp.resource(
-    "content://story-design-guidelines.md",
+    "content://slide-design-guidelines.md",
     name="Story design guidelines",
     mime_type="text/markdown",
 )
@@ -360,7 +360,7 @@ def story_campaign(topic: str, slide_count: int = DEFAULT_SLIDES) -> str:
 
 Read both resources first -- they are normative, not background reading:
 - content://story-telling-rules.md   what the story says, and in what order
-- content://story-design-guidelines.md   how a slide must look
+- content://slide-design-guidelines.md   how a slide must look
 
 ## The quick path
 

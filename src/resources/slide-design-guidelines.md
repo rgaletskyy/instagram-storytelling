@@ -1,8 +1,8 @@
-# HealthyDoggo — Instagram Story Design System
+# HealthyDoggo — Instagram Slide Design System
 
 **Version:** 1.0 · **Date:** 2026-08-27
 **Sources:** HealthyDoggo brandbook "Дизайн гайди" (v. 04.09.25) + UX teardown of 16 approved reference stories + the `png/` decorative element library.
-**Audience:** the story-telling agent (prompt author for Nano Banana), designers, and anyone producing IG Stories / Reels covers for HealthyDoggo.
+**Audience:** the story-telling agent (prompt author for Nano Banana), designers, and anyone producing IG stories, feed posts and Reels covers for HealthyDoggo.
 
 This document is normative. Where a rule says **MUST**, treat it as a hard constraint and validate the rendered output against it. Where it says **SHOULD**, deviate only with a reason.
 

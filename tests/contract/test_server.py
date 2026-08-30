@@ -42,7 +42,7 @@ async def test_every_brand_resource_is_published():
     async with Client(mcp) as client:
         uris = {str(r.uri) for r in (await client.list_resources()).resources}
     assert uris == {
-        "content://story-design-guidelines.md",
+        "content://slide-design-guidelines.md",
         "content://story-telling-rules.md",
         "content://lifestyle-content-brief.md",
     }
@@ -52,7 +52,7 @@ async def test_every_brand_resource_is_published():
     "uri,marker",
     [
         ("content://story-telling-rules.md", "Story Telling Rules"),
-        ("content://story-design-guidelines.md", "Story Design System"),
+        ("content://slide-design-guidelines.md", "Slide Design System"),
     ],
 )
 async def test_resources_are_served_verbatim(uri, marker):

@@ -126,10 +126,10 @@ Not a Pydantic model — two files read as text and injected as prompt context, 
 
 | Resource URI | File |
 |---|---|
-| `content://story-design-guidelines.md` | `src/resources/story-design-guidelines.md` |
+| `content://slide-design-guidelines.md` | `src/resources/slide-design-guidelines.md` |
 | `content://story-telling-rules.md` | `src/resources/story-telling-rules.md` |
 
-`story-telling-rules.md` is context for script generation (FR-007); `story-design-guidelines.md` is context for rendering (FR-009).
+`story-telling-rules.md` is context for script generation (FR-007); `slide-design-guidelines.md` is context for rendering (FR-009).
 
 ---
 

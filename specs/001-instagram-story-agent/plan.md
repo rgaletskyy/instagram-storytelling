@@ -103,7 +103,7 @@ src/
 │   └── cli.py                      # main() — the console script in pyproject.toml
 └── resources/                      # already present
     ├── products.xlsx
-    ├── story-design-guidelines.md
+    ├── slide-design-guidelines.md
     └── story-telling-rules.md
 
 tests/
