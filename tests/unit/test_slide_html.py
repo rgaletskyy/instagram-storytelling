@@ -102,3 +102,63 @@ async def test_a_relative_path_still_renders(tmp_path, monkeypatch):
     )
     assert out.is_absolute()
     assert out.exists()
+
+
+class TestDecorLibrary:
+    """Section 9 of the design guidelines: 194 outline PNGs, recoloured."""
+
+    def test_the_library_is_installed(self):
+        assets = slide_html.decor_assets()
+        assert len(assets) == 194
+        assert "arrow 1.png" in assets
+
+    def test_the_cache_holds_a_set_per_brand_colour(self):
+        from instagram_marketing_agent.config import DECOR_COLOURS
+
+        cache = slide_html.build_decor_cache()
+        assert cache is not None
+        for token in DECOR_COLOURS:
+            assert (cache / token / "arrow 1.png").exists()
+
+    def test_recolouring_keeps_the_shape_and_replaces_the_colour(self):
+        """The alpha channel is the artwork; only the colour changes."""
+        from PIL import Image
+
+        from instagram_marketing_agent.config import DECOR_COLOURS, DECOR_DIR
+
+        cache = slide_html.build_decor_cache()
+        with Image.open(DECOR_DIR / "arrow 1.png") as original:
+            source_alpha = original.convert("RGBA").getchannel("A").tobytes()
+        with Image.open(cache / "turquoise" / "arrow 1.png") as tinted:
+            rgba = tinted.convert("RGBA")
+            assert rgba.getchannel("A").tobytes() == source_alpha
+            opaque = [p for p in rgba.get_flattened_data() if p[3] > 200]
+        expected = tuple(int(DECOR_COLOURS["turquoise"][i : i + 2], 16) for i in (1, 3, 5))
+        assert all(p[:3] == expected for p in opaque)
+
+    async def test_a_recoloured_element_renders_in_the_page(self, tmp_path):
+        from PIL import Image
+
+        page = (
+            "<html><body style='margin:0;background:#fff'>"
+            "<img src='decor/turquoise/arrow 1.png' width='400'>"
+            "</body></html>"
+        )
+        out = await slide_html.screenshot(page, tmp_path / "s.jpg", tmp_path)
+        with Image.open(out) as im:
+            teal = sum(
+                1
+                for r, g, b in im.convert("RGB").get_flattened_data()
+                if abs(r - 87) < 45 and abs(g - 202) < 45 and abs(b - 174) < 45
+            )
+        assert teal > 500, "the recoloured element did not render"
+
+    def test_the_prompt_offers_the_library(self):
+        from instagram_marketing_agent import llm
+        from instagram_marketing_agent.config import POST_FORMAT
+
+        rules = llm._layout_rules(POST_FORMAT)
+        assert "DECORATIVE ELEMENTS" in rules
+        assert "arrow 1.png" in rules
+        # Masks do not render in headless Chromium; the assets are pre-tinted.
+        assert "-webkit-mask" not in rules

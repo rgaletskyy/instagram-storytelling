@@ -25,6 +25,21 @@ PRODUCTS_XLSX = _PRODUCTS_REAL if _PRODUCTS_REAL.exists() else _PRODUCTS_SAMPLE
 DESIGN_GUIDELINES = RESOURCES_DIR / "story-design-guidelines.md"
 STORYTELLING_RULES = RESOURCES_DIR / "story-telling-rules.md"
 LIFESTYLE_BRIEF = RESOURCES_DIR / "lifestyle-content-brief.md"
+# The decorative element library described in section 9 of the design
+# guidelines: transparent outline PNGs, meant to be recoloured before use.
+DECOR_DIR = RESOURCES_DIR / "png"
+# Recoloured copies of the library, one set per brand token. Built once on
+# first use; headless Chromium does not render CSS masks, so the assets are
+# tinted in Python instead of being recoloured in the page.
+DECOR_CACHE = ROOT / ".decor-cache"
+# Section 2.1 of the design guidelines.
+DECOR_COLOURS = {
+    "turquoise": "#57CAAE",
+    "pink": "#FF8080",
+    "brown": "#5F3D09",
+    "white": "#FFFFFF",
+    "grey": "#616161",
+}
 
 # .heic/.heif come straight off an iPhone. Claude's vision API does not
 # accept them, so they are converted to JPEG before being described.

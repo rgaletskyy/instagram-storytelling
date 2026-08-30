@@ -52,3 +52,4 @@ content/input/*
 content/output/*
 !content/input/.gitkeep
 !content/output/.gitkeep
+.decor-cache/

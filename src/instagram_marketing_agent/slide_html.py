@@ -12,7 +12,14 @@ from pathlib import Path
 
 from playwright.async_api import async_playwright
 
-from .config import SCREENSHOT_QUALITY, STORY_FORMAT, CanvasFormat
+from .config import (
+    DECOR_CACHE,
+    DECOR_COLOURS,
+    DECOR_DIR,
+    SCREENSHOT_QUALITY,
+    STORY_FORMAT,
+    CanvasFormat,
+)
 
 _FENCE_RE = re.compile(r"^\s*```(?:html)?\s*|\s*```\s*$", re.IGNORECASE)
 
@@ -54,6 +61,7 @@ async def screenshot(
     base_dir = base_dir.resolve()
     out_path.parent.mkdir(parents=True, exist_ok=True)
     base_dir.mkdir(parents=True, exist_ok=True)
+    stage_decor(base_dir)
     page_file = base_dir / f".{out_path.stem}.html"
     page_file.write_text(clean_html(html), encoding="utf-8")
 
@@ -113,3 +121,64 @@ def normalize(image: Path, fmt: CanvasFormat) -> Path:
             (fmt.width, fmt.height), Image.LANCZOS
         ).save(image, "JPEG", quality=SCREENSHOT_QUALITY)
     return image
+
+
+def build_decor_cache() -> Path | None:
+    """Recolour the library once, into one folder per brand token.
+
+    The assets ship as dark outline art and the guidelines require recolouring
+    before use. Headless Chromium does not render CSS masks, so the tint is
+    baked in here: the alpha channel is kept and the colour replaced, which is
+    exact and cannot fail in the page.
+    """
+    if not DECOR_DIR.is_dir():
+        return None
+
+    sources = sorted(DECOR_DIR.glob("*.png"))
+    expected = len(sources) * len(DECOR_COLOURS)
+    if DECOR_CACHE.is_dir() and len(list(DECOR_CACHE.glob("*/*.png"))) == expected:
+        return DECOR_CACHE
+
+    from PIL import Image
+
+    for token, hex_colour in DECOR_COLOURS.items():
+        out_dir = DECOR_CACHE / token
+        out_dir.mkdir(parents=True, exist_ok=True)
+        rgb = tuple(int(hex_colour[i : i + 2], 16) for i in (1, 3, 5))
+        for source in sources:
+            target = out_dir / source.name
+            if target.exists():
+                continue
+            with Image.open(source) as im:
+                alpha = im.convert("RGBA").getchannel("A")
+                tinted = Image.new("RGBA", im.size, (*rgb, 255))
+                tinted.putalpha(alpha)
+                tinted.save(target)
+    return DECOR_CACHE
+
+
+def decor_assets() -> list[str]:
+    """Filenames in the decorative element library, or empty when absent."""
+    if not DECOR_DIR.is_dir():
+        return []
+    return sorted(p.name for p in DECOR_DIR.glob("*.png"))
+
+
+def stage_decor(base_dir: Path) -> None:
+    """Make the recoloured library reachable from the rendered page.
+
+    Symlinked rather than copied: a campaign renders a page per slide, and the
+    tinted library is far too large to duplicate each time.
+    """
+    cache = build_decor_cache()
+    if cache is None:
+        return
+    link = base_dir / "decor"
+    if link.exists() or link.is_symlink():
+        return
+    try:
+        link.symlink_to(cache, target_is_directory=True)
+    except OSError:
+        import shutil
+
+        shutil.copytree(cache, link)

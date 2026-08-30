@@ -117,6 +117,19 @@ its invention onto all of them. A subject described in
 words is a subject the model reinvents: a different dog on every slide, a fictional label
 on every bottle.
 
+## Decorative element library
+
+`src/resources/png/` holds the 194 outline PNGs catalogued in section 9 of the design
+guidelines. They ship as dark outline art and the guidelines require recolouring before
+use, so on first run they are tinted into the brand palette under `.decor-cache/`
+(gitignored) and the layout step references them as `decor/<colour>/<file>.png`.
+
+Colours: turquoise, pink, brown, white, grey — the tokens from section 2.1.
+
+The tint is baked in Python rather than done with a CSS mask, because headless Chromium
+does not render `mask-image`. Without the folder the app behaves exactly as before, drawing
+its own accents in CSS.
+
 ## One person per set
 
 A campaign or lifestyle set defines a single `cast` — one person, described once by age,

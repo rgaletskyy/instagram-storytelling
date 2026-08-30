@@ -555,8 +555,45 @@ def _layout_system() -> list[dict]:
     ]
 
 
+def _decor_rules() -> str:
+    """How to use the decorative element library, if it is installed.
+
+    Section 9 of the design guidelines catalogues the assets and section 9's
+    own rules govern how many may appear; this only explains the mechanics of
+    reaching and recolouring them.
+    """
+    from .slide_html import decor_assets
+
+    assets = decor_assets()
+    if not assets:
+        return ""
+
+    from .config import DECOR_COLOURS
+
+    return (
+        "\n\nDECORATIVE ELEMENTS\n"
+        f"The library from section 9 is available: {len(assets)} elements, "
+        "already recoloured into the brand palette. Reference one as a plain "
+        "image:\n"
+        "  <img src=\"decor/turquoise/arrow 1.png\" style=\"position:absolute;"
+        "top:340px;left:380px;width:220px\">\n"
+        f"Colour folders: {', '.join(DECOR_COLOURS)}. Pick the one that suits "
+        "the slide -- turquoise is the primary accent, pink is for promo and "
+        "discounts, and white reads on a photograph. Use the filenames exactly "
+        "as listed, spaces included.\n"
+        "Obey section 9's limits: one arrow per slide, never mix the thin "
+        "sketch and bold brush arrow families, one speech bubble per slide, at "
+        "most two sparkle elements, and no sparkle on educational or "
+        "medical-claim slides. Keep an element under 220px unless it is the "
+        "arrow, and never let one cover the product, the dog's face or the "
+        "copy. Decoration is optional -- a clean slide beats a decorated one.\n"
+        "Available files:\n" + ", ".join(assets)
+    )
+
+
 def _layout_rules(fmt: CanvasFormat) -> str:
     """The layout contract, sized to the artboard being rendered."""
+    decor = _decor_rules()
     return f"""Return one complete standalone HTML document.
 
 Hard requirements:
@@ -590,7 +627,8 @@ block: what matters is the whole shape, not just the letters.
   reads through it. Never solve it by making the block bigger.
 - Aim for editorial restraint: a small, confident block of type on a photograph.
   A heavy band across the middle of the frame is a failure, not a layout.
-- Self-contained: no JavaScript, no images other than background.jpg.
+- Self-contained: no JavaScript. The only images are background.jpg and any
+  decorative element from the library described below.{decor}
 
 Explain in `placement_reason` where you put the text and what you avoided."""
 
