@@ -87,7 +87,7 @@ async def create_story_campaign(
     slide_count: int = DEFAULT_SLIDES,
     verify: bool = True,
 ) -> dict:
-    """Run the whole campaign: describe input, write the script, render and verify."""
+    """Generates instagram story telling. Run the whole workflow: describe input, write the script, render and verify."""
     campaign = await workflow.create_story_campaign(
         topic=topic, slide_count=slide_count, verify=verify
     )
@@ -101,7 +101,7 @@ async def create_post_campaign(
     slide_count: int = DEFAULT_SLIDES,
     verify: bool = True,
 ) -> dict:
-    """Same campaign, on a 1:1 square artboard for an Instagram feed post.
+    """Generates content for an Instagram feed post in a 1:1 square format.
 
     Identical pipeline and brand rules to create_story_campaign -- only the
     artboard differs: 1080x1080 instead of 1080x1920, and no story UI to keep
