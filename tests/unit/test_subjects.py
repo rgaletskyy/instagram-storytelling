@@ -188,3 +188,106 @@ class TestPromptContract:
             )
         )
         assert attached[0] == [Path("dog.jpg")]
+
+
+class TestPackshotsOverrideFrames:
+    """A catalogue packshot is authoritative for the packaging.
+
+    It is shot straight with the label sharp and complete; a video frame catches
+    a bottle at an angle, half out of focus or partly out of shot.
+    """
+
+    def test_a_packshot_outranks_a_still(self):
+        described = [_still("input_bottle.jpg", shows_product=True)]
+        refs = asyncio.run(
+            workflow.subject_references(described, packshots=[Path("sku.png")])
+        )
+        assert refs.product[0] == Path("sku.png")
+
+    def test_a_frame_is_never_used_as_a_product_when_a_packshot_exists(
+        self, monkeypatch, tmp_path
+    ):
+        frame = tmp_path / "frame.jpg"
+        frame.write_bytes(b"jpeg")
+
+        async def looks(path):
+            return llm._ImageDescription(
+                description="d", shows_product=True, shows_dog=True
+            )
+
+        monkeypatch.setattr(llm, "inspect_image", looks)
+        described = [
+            MediaDescription(
+                path=tmp_path / "c.mov", kind="video", description="d",
+                frames=[frame],
+            )
+        ]
+        refs = asyncio.run(
+            workflow.subject_references(described, packshots=[Path("sku.png")])
+        )
+        assert refs.product == [Path("sku.png")]
+        # The frame is still good enough to stand in for the dog.
+        assert frame in refs.dog
+
+    def test_a_frame_supplies_the_product_when_no_packshot_exists(
+        self, monkeypatch, tmp_path
+    ):
+        frame = tmp_path / "frame.jpg"
+        frame.write_bytes(b"jpeg")
+
+        async def looks(path):
+            return llm._ImageDescription(description="d", shows_product=True)
+
+        monkeypatch.setattr(llm, "inspect_image", looks)
+        described = [
+            MediaDescription(
+                path=tmp_path / "c.mov", kind="video", description="d",
+                frames=[frame],
+            )
+        ]
+        refs = asyncio.run(workflow.subject_references(described, packshots=[]))
+        assert refs.product == [frame]
+
+    def test_every_named_sku_supplies_a_packshot(self, monkeypatch, tmp_path):
+        from instagram_marketing_agent.models import Product
+
+        products = [
+            Product(sku=f"SKU-{i}", name=f"P{i}", image_url="https://x/i.png")
+            for i in range(3)
+        ]
+        monkeypatch.setattr(
+            workflow,
+            "download_product_image",
+            lambda p, d: Path(f"{p.sku}.png"),
+        )
+        shots = workflow.catalogue_packshots(products, tmp_path)
+        assert shots == [Path("SKU-0.png"), Path("SKU-1.png"), Path("SKU-2.png")]
+
+    def test_a_sku_with_no_photo_is_skipped_not_faked(self, monkeypatch, tmp_path):
+        from instagram_marketing_agent.models import Product
+
+        products = [
+            Product(sku="HAS", name="p", image_url="https://x/i.png"),
+            Product(sku="NONE", name="p", image_url=""),
+        ]
+        monkeypatch.setattr(
+            workflow,
+            "download_product_image",
+            lambda p, d: Path("has.png") if p.image_url else None,
+        )
+        assert workflow.catalogue_packshots(products, tmp_path) == [Path("has.png")]
+
+
+class TestMultipleProducts:
+    def test_a_scene_with_three_bottles_gets_three_packshots(self):
+        refs = workflow.SubjectReferences(
+            product=[Path(f"p{i}.png") for i in range(3)], dog=[Path("d.jpg")]
+        )
+        attached = refs.for_slide(True, True, False)
+        assert attached[:3] == [Path("p0.png"), Path("p1.png"), Path("p2.png")]
+        assert Path("d.jpg") in attached
+
+    def test_the_model_is_told_they_are_different_products(self):
+        rule = llm.SUBJECT_FIDELITY_RULE
+        assert "DIFFERENT" in rule
+        assert "Do not copy one label onto all of them" in rule

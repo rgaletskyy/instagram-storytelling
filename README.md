@@ -107,7 +107,13 @@ what to leave out. It never describes what the dog, the owner or the product *lo
 no breed, coat, eye colour, hair, clothing or label wording.
 
 Appearance comes from real photographs attached to the generation, picked from your input
-photos and from the frames already sampled out of a supplied video. A subject described in
+photos and from the frames already sampled out of a supplied video.
+
+**The catalogue photo of a SKU always wins for the packaging.** It is shot straight with the
+label sharp; a video frame catches a bottle at an angle or half out of focus. A frame is
+used for a product only when that SKU has no catalogue photo. A scene showing several
+products gets a packshot for each — given one, the model invents the rest and then copies
+its invention onto all of them. A subject described in
 words is a subject the model reinvents: a different dog on every slide, a fictional label
 on every bottle.
 

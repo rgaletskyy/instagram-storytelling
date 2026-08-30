@@ -154,8 +154,11 @@ DEFAULT_VIDEO_FRAMES = MAX_VIDEO_FRAMES
 # Lifestyle sets: the brief asks for 6-8 frames per product, but a run defaults
 # to a smaller set because each frame is a separate generation.
 # Reference photographs attached to one generation. A handful anchors the
-# subjects; a pile of them dilutes the scene description.
-REFERENCE_LIMIT = 3
+# subjects; a pile of them dilutes the scene description. A scene showing
+# several products needs a packshot for each, or the model invents the ones it
+# was not given, so the ceiling has to clear products + dog + owner.
+REFERENCE_LIMIT = 6
+PRODUCT_REFERENCE_LIMIT = 4
 # How many video frames are worth inspecting to find the dog and the owner.
 FRAME_INSPECT_LIMIT = 4
 

@@ -30,6 +30,7 @@ from .config import (
     MIN_SLIDES,
     OUTPUT_DIR,
     POST_FORMAT,
+    PRODUCT_REFERENCE_LIMIT,
     REFERENCE_LIMIT,
     STORY_FORMAT,
     TOPIC_FILE,
@@ -258,10 +259,15 @@ class SubjectReferences:
     def for_slide(
         self, shows_product: bool, has_dog: bool, has_human: bool
     ) -> list[Path]:
-        """The references to attach, capped so the model is not swamped."""
+        """The references to attach, capped so the model is not swamped.
+
+        Every product goes in, not just the first: given one packshot for a
+        scene calling for three bottles, the model invents the other two and
+        then applies its invention to all of them.
+        """
         chosen: list[Path] = []
         if shows_product:
-            chosen += self.product[:1]
+            chosen += self.product[:PRODUCT_REFERENCE_LIMIT]
         if has_dog:
             chosen += self.dog[:1]
         if has_human:
@@ -283,17 +289,36 @@ def _frames_of(descriptions: list[MediaDescription]) -> list[Path]:
     return frames
 
 
+def catalogue_packshots(products, work: Path) -> list[Path]:
+    """Download the official photo of every SKU named in the brief."""
+    shots: list[Path] = []
+    for product in products:
+        downloaded = download_product_image(product, work)
+        if downloaded is not None:
+            shots.append(downloaded)
+        else:
+            logger.warning("no catalogue photo for %s", product.sku)
+    return shots
+
+
 async def subject_references(
     descriptions: list[MediaDescription],
+    packshots: list[Path] | None = None,
 ) -> SubjectReferences:
     """Pick a real photograph for each subject that may appear in a scene.
 
-    Video frames count: they show the actual dog and owner in motion, which is
-    usually a better likeness than a posed photo, and they are already on disk
-    beside the campaign.
+    Video frames count for the dog and the owner: they show the actual animal
+    and person in motion, which is usually a better likeness than a posed photo.
+
+    For the PRODUCT they do not. A catalogue packshot is the authoritative
+    image of the packaging -- shot straight, label sharp and complete -- while a
+    frame catches a bottle at an angle, half out of focus or partly out of
+    shot. So packshots always come first, and a frame is only used for a product
+    when no packshot exists.
     """
     stills = [d for d in descriptions if d.kind == "image"]
-    product = [d.path for d in stills if d.shows_product]
+    product = list(packshots or [])
+    product += [d.path for d in stills if d.shows_product]
     dog = [d.path for d in stills if d.shows_dog]
     person = [d.path for d in stills if d.shows_person]
 
@@ -312,7 +337,8 @@ async def subject_references(
                 dog.append(frame)
             if result.shows_person:
                 person.append(frame)
-            if result.shows_product:
+            if result.shows_product and not packshots:
+                # A packshot, when we have one, always outranks a video frame.
                 product.append(frame)
 
     return SubjectReferences(product=product, dog=dog, person=person)
@@ -455,7 +481,8 @@ async def create_campaign(
     _guard_prompts(script)
 
     references = product_references(descriptions)
-    subjects = await subject_references(descriptions)
+    packshots = catalogue_packshots(products, out_dir / ".packshots")
+    subjects = await subject_references(descriptions, packshots)
     results = await asyncio.gather(
         *(
             _build_slide(
