@@ -28,8 +28,8 @@ from .models import Product, SlideSpec
 
 mcp = MCPServer(
     name="instagram-marketing-agent",
-    title="Instagram Story Telling Agent",
-    description="Builds Instagram story campaigns from local images or vide and a brief.",
+    title="Instagram Marketing Agent",
+    description="Builds Instagram story campaigns, posts, generates lifestyle photos from local images or video and a brief.",
     version="0.1.0",
 )
 
