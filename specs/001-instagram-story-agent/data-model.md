@@ -33,7 +33,7 @@ One entry of the generated script, produced by Opus. Satisfies FR-006.
 | Field | Type | Notes |
 |---|---|---|
 | `index` | `int` | 1-based position in the sequence |
-| `role` | `Literal["hook","tension","solution","proof","offer","cta"]` | the narrative job from `story-telling-rules.md` §2 |
+| `role` | `Literal["hook","tension","solution","proof","offer","cta"]` | the narrative job; §4 of `smm_composition_rules.md` |
 | `image_prompt` | `str` | passed verbatim to Gemini; must not contain a URL (FR-008a) |
 | `overlay_text` | `str` | the copy drawn onto the slide, in the brief's language |
 | `ig_notes` | `str` | stickers / polls / link to add at posting time — notes only, never rendered |
@@ -73,7 +73,7 @@ The whole generated script; the structured-output schema for the Opus call. Save
 | Field | Type | Notes |
 |---|---|---|
 | `topic` | `str` | the brief, verbatim |
-| `slides` | `list[SlideSpec]` | length 3–7 (spec assumption; `story-telling-rules.md` §2) |
+| `slides` | `list[SlideSpec]` | length 3–7 (spec assumption; `smm_composition_rules.md` §4) |
 | `products` | `list[Product]` | resolved catalogue entries |
 | `product_url` | `str \| None` | convenience copy of the primary product's link for the CTA (FR-006a) |
 | `cast` | `str` | the one person appearing across the campaign — age, build, hands, wardrobe. Slides are generated independently, so without it each invents a different owner (FR-008e) |
@@ -127,9 +127,9 @@ Not a Pydantic model — two files read as text and injected as prompt context, 
 | Resource URI | File |
 |---|---|
 | `content://slide-design-guidelines.md` | `src/resources/slide-design-guidelines.md` |
-| `content://story-telling-rules.md` | `src/resources/story-telling-rules.md` |
+| `content://smm_composition_rules.md` | `src/resources/smm_composition_rules.md` |
 
-`story-telling-rules.md` is context for script generation (FR-007); `slide-design-guidelines.md` is context for rendering (FR-009).
+`smm_composition_rules.md` is context for script generation (FR-007); `slide-design-guidelines.md` is context for rendering (FR-009).
 
 ---
 

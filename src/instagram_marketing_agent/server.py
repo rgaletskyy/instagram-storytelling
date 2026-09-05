@@ -322,7 +322,7 @@ async def describe_video(
 
 @mcp.resource(
     "content://slide-design-guidelines.md",
-    name="Story design guidelines",
+    name="Slide design guidelines",
     mime_type="text/markdown",
 )
 def design_guidelines() -> str:
@@ -341,12 +341,16 @@ def lifestyle_brief() -> str:
 
 
 @mcp.resource(
-    "content://story-telling-rules.md",
-    name="Story telling rules",
+    "content://smm_composition_rules.md",
+    name="SMM composition rules",
     mime_type="text/markdown",
 )
 def storytelling_rules() -> str:
-    """Rules for what a story says and in what order. Basic recommendations how to build good story telling."""
+    """What each slide communicates and how its scene is composed.
+
+    Covers sequence structure, copy and tone, reference fidelity, framing and
+    continuity across slides.
+    """
     return STORYTELLING_RULES.read_text(encoding="utf-8")
 
 
@@ -359,7 +363,7 @@ def story_campaign(topic: str, slide_count: int = DEFAULT_SLIDES) -> str:
     return f"""Build an Instagram story campaign about: {topic!r} ({slide_count} slides).
 
 Read both resources first -- they are normative, not background reading:
-- content://story-telling-rules.md   what the story says, and in what order
+- content://smm_composition_rules.md   what each slide says, and how the scene is composed
 - content://slide-design-guidelines.md   how a slide must look
 
 ## The quick path

@@ -249,7 +249,7 @@ async def generate_script(
     media_block = "\n\n".join(descriptions) or "No input media supplied."
 
     system = (
-        "You write Instagram story campaigns for the HealthyDoggo brand.\n"
+        "You write Instagram slide sequences for the HealthyDoggo brand.\n"
         "The rules below are normative. Follow them exactly.\n\n"
         f"{_rules()}"
     )
@@ -265,7 +265,12 @@ async def generate_script(
         "Write all copy in the same language as the topic brief.\n"
         "For each slide give:\n"
         "  index       - 1-based position\n"
-        "  role        - hook | tension | solution | proof | offer | cta\n"
+        "  role        - hook | tension | solution | proof | offer | cta.\n"
+        "                These are the field's allowed values. Section 4 of the "
+        "rules names the same stages differently -- attention, relevance, "
+        "answer, evidence, offer, action -- so map them: attention=hook, "
+        "relevance=tension, answer=solution, evidence=proof, offer=offer, "
+        "action=cta. Never render a stage name as visible copy.\n"
         "  image_prompt- an English prompt describing the SCENE ONLY: the "
         "setting, the action taking place, the light, the camera angle and "
         "framing, and what to leave out. Never include a URL, a web address, or "

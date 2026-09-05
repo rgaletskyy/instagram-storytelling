@@ -64,7 +64,7 @@ async def generate_storytelling_script(
     slide_count: int = 5,
 ) -> dict
 ```
-Returns a `CampaignScript`. Uses `claude-opus-5` with `story-telling-rules.md` as context (FR-006, FR-007).
+Returns a `CampaignScript`. Uses `claude-opus-5` with `smm_composition_rules.md` as context (FR-006, FR-007).
 
 ### `generate_image`
 ```python
@@ -141,7 +141,7 @@ Writes slides + `script.json` to `content/output/<slug>-<YYYYMMDD-HHMMSS>/`, ret
 | URI | MIME | Backing file |
 |---|---|---|
 | `content://slide-design-guidelines.md` | `text/markdown` | `src/resources/slide-design-guidelines.md` |
-| `content://story-telling-rules.md` | `text/markdown` | `src/resources/story-telling-rules.md` |
+| `content://smm_composition_rules.md` | `text/markdown` | `src/resources/smm_composition_rules.md` |
 | `content://lifestyle-content-brief.md` | `text/markdown` | `src/resources/lifestyle-content-brief.md` |
 
 Both are served verbatim.

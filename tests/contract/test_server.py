@@ -43,7 +43,7 @@ async def test_every_brand_resource_is_published():
         uris = {str(r.uri) for r in (await client.list_resources()).resources}
     assert uris == {
         "content://slide-design-guidelines.md",
-        "content://story-telling-rules.md",
+        "content://smm_composition_rules.md",
         "content://lifestyle-content-brief.md",
     }
 
@@ -51,7 +51,7 @@ async def test_every_brand_resource_is_published():
 @pytest.mark.parametrize(
     "uri,marker",
     [
-        ("content://story-telling-rules.md", "Story Telling Rules"),
+        ("content://smm_composition_rules.md", "Scene Composition Rules"),
         ("content://slide-design-guidelines.md", "Slide Design System"),
     ],
 )

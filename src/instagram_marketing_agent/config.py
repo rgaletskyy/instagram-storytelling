@@ -23,7 +23,7 @@ _PRODUCTS_REAL = RESOURCES_DIR / "products.xlsx"
 _PRODUCTS_SAMPLE = RESOURCES_DIR / "products.sample.xlsx"
 PRODUCTS_XLSX = _PRODUCTS_REAL if _PRODUCTS_REAL.exists() else _PRODUCTS_SAMPLE
 DESIGN_GUIDELINES = RESOURCES_DIR / "slide-design-guidelines.md"
-STORYTELLING_RULES = RESOURCES_DIR / "story-telling-rules.md"
+STORYTELLING_RULES = RESOURCES_DIR / "smm_composition_rules.md"
 LIFESTYLE_BRIEF = RESOURCES_DIR / "lifestyle-content-brief.md"
 # The decorative element library described in section 9 of the design
 # guidelines: transparent outline PNGs, meant to be recoloured before use.
@@ -156,7 +156,7 @@ FORMATS = {f.name: f for f in (STORY_FORMAT, POST_FORMAT, LIFESTYLE_FORMAT)}
 
 
 # --- Story shape -------------------------------------------------------------
-# src/resources/story-telling-rules.md section 2.
+# src/resources/smm_composition_rules.md section 4.
 
 VERIFY_RETRIES = 1
 

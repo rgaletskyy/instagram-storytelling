@@ -104,7 +104,7 @@ src/
 └── resources/                      # already present
     ├── products.xlsx
     ├── slide-design-guidelines.md
-    └── story-telling-rules.md
+    └── smm_composition_rules.md
 
 tests/
 ├── unit/                           # SKU regex, HTML strip, wrap, filter build, slide ordering
