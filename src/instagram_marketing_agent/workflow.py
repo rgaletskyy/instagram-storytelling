@@ -41,11 +41,11 @@ from .config import (
 from .models import (
     Campaign,
     CampaignScript,
+    ContentReview,
     LifestyleFrame,
     LifestyleShot,
     MediaDescription,
     SlideSpec,
-    SlideVerdict,
 )
 from .products import (
     download_product_image,
@@ -232,6 +232,96 @@ async def describe_inputs(
     return described
 
 
+async def verify_content(
+    target: Path | None = None, format: str | None = None
+) -> list[ContentReview]:
+    """Review finished slides or posts against the brand rules.
+
+    `target` is a folder of them or a single image; without one, the input
+    folder. Each is described with the same pass that reads campaign input, then
+    judged against the design guidelines and the composition rules. A folder is
+    read in filename order and also judged as a sequence, which is where the
+    storytelling rules bite -- one image cannot breach an arc.
+
+    `format` forces the artboard; left out, each image's is read off its own
+    proportions.
+    """
+    directory = Path(target) if target is not None else INPUT_DIR
+    if not directory.exists():
+        raise FileNotFoundError(f"nothing to review at {directory}")
+
+    if directory.is_file():
+        if directory.suffix.lower() not in IMAGE_SUFFIXES:
+            raise ValueError(f"{directory.name} is not an image")
+        images = [directory]
+    else:
+        # Video is out of scope: this reviews finished creatives, which are stills.
+        images, _ = _input_files(directory)
+        if not images:
+            raise ValueError(f"no images to review in {directory}")
+
+    forced = FORMATS.get(format) if format else None
+    if format and forced is None:
+        raise ValueError(f"unknown format {format!r}; expected one of {sorted(FORMATS)}")
+
+    described = await asyncio.gather(
+        *(llm.inspect_image(p) for p in images), return_exceptions=True
+    )
+
+    readable: list[tuple[Path, str]] = []
+    reviews: list[ContentReview] = []
+    for path, result in zip(images, described, strict=True):
+        if isinstance(result, BaseException):
+            # Reported rather than dropped: a file silently missing from the
+            # results reads as a file with nothing wrong with it.
+            logger.warning("could not describe %s: %s", path.name, result)
+            reviews.append(
+                ContentReview(
+                    file=path.name,
+                    error=f"could not be read: {type(result).__name__}: {result}",
+                )
+            )
+            continue
+        readable.append((path, result.description))
+
+    if not readable:
+        raise RuntimeError(
+            f"none of the {len(images)} images at {directory} could be read"
+        )
+
+    formats = [forced or llm.format_for_image(path) for path, _ in readable]
+    findings = await asyncio.gather(
+        *(
+            llm.review_content(path, description, fmt)
+            for (path, description), fmt in zip(readable, formats, strict=True)
+        ),
+        return_exceptions=True,
+    )
+
+    for (path, description), fmt, found in zip(readable, formats, findings, strict=True):
+        error = ""
+        if isinstance(found, BaseException):
+            logger.warning("could not review %s: %s", path.name, found)
+            error = f"review failed: {type(found).__name__}: {found}"
+            found = []
+        reviews.append(
+            ContentReview(
+                file=path.name,
+                format=fmt.name,
+                description=description,
+                findings=found,
+                error=error,
+            )
+        )
+
+    if len(readable) > 1:
+        sequence = await llm.review_content_sequence([d for _, d in readable])
+        reviews.append(
+            ContentReview(file="(the set as a whole)", findings=sequence)
+        )
+    return reviews
+
+
 def product_references(
     descriptions: list[MediaDescription], limit: int = 2
 ) -> list[Path]:
@@ -355,6 +445,17 @@ async def subject_references(
     )
 
 
+def _slide_work(out_dir: Path, index: int) -> Path:
+    """Where one slide's background and page live while it is being built."""
+    return out_dir / f".slide_{index}"
+
+
+def _clear_work_dirs(out_dir: Path) -> None:
+    """Drop the per-slide scratch, once nothing else needs the backgrounds."""
+    for work in out_dir.glob(".slide_*"):
+        shutil.rmtree(work, ignore_errors=True)
+
+
 def _guard_prompts(script: CampaignScript) -> None:
     """The product URL belongs in the script, never in the imagery (FR-008a)."""
     for slide in script.slides:
@@ -369,18 +470,20 @@ async def _build_slide(
     slide: SlideSpec,
     out_dir: Path,
     model: str,
-    verify: bool = True,
     references: list[Path] | None = None,
     fmt: CanvasFormat = STORY_FORMAT,
     cast: str = "",
     subjects: SubjectReferences | None = None,
-) -> tuple[Path, SlideVerdict | None]:
-    """Background -> HTML layout -> browser screenshot -> verification.
+) -> Path:
+    """Background -> HTML layout -> browser screenshot.
 
     Each slide gets its own working folder so the browser can load the background
-    as a relative asset and concurrent slides cannot collide on the filename.
+    as a relative asset and concurrent slides cannot collide on the filename. It
+    is kept until the campaign has been reviewed: a slide flagged for its layout
+    is laid out again over the background it already has, rather than paying for
+    a second image generation.
     """
-    work = out_dir / f".slide_{slide.index}"
+    work = _slide_work(out_dir, slide.index)
     work.mkdir(parents=True, exist_ok=True)
     background = work / "background.jpg"
     prompt = slide.image_prompt
@@ -408,38 +511,70 @@ async def _build_slide(
     )
 
     out_path = out_dir / f"{slide.index}.jpg"
-    verdict: SlideVerdict | None = None
-    issues: list[str] = []
+    html = await llm.generate_slide_html(slide, background, None, fmt)
+    await slide_html.screenshot(html, out_path, work, fmt)
+    return out_path
 
-    for attempt in range(VERIFY_RETRIES + 1):
-        try:
-            html = await llm.generate_slide_html(
-                slide, background, issues or None, fmt
-            )
-            await slide_html.screenshot(html, out_path, work, fmt)
-        except Exception as exc:  # noqa: BLE001
-            if out_path.exists():
-                # A retry that fails must not discard the render that worked.
-                logger.warning(
-                    "slide %s: retry failed, keeping the earlier render: %s",
-                    slide.index,
-                    exc,
-                )
-                break
-            raise
-        if not verify:
-            break
-        verdict = await llm.verify_slide(out_path, slide, fmt, cast)
-        if verdict.passed:
-            break
-        issues = verdict.issues
-        if attempt == VERIFY_RETRIES:
-            # Keep the best effort rather than discarding the slide; the verdict
-            # travels with the campaign so the failure is visible.
-            break
 
-    shutil.rmtree(work, ignore_errors=True)
-    return out_path, verdict
+def _slide_index(filename: str) -> int | None:
+    """The slide a review entry is about, or None for the set-level one."""
+    stem = Path(filename).stem
+    return int(stem) if stem.isdigit() else None
+
+
+async def _fix_slide(
+    slide: SlideSpec, issues: list[str], out_dir: Path, fmt: CanvasFormat
+) -> None:
+    """Lay one flagged slide out again, with the review's issues in hand.
+
+    Only the copy is placed again. The picture is not regenerated: it was judged
+    on what it shows, and a layout complaint should not turn into a different
+    photograph.
+    """
+    work = _slide_work(out_dir, slide.index)
+    background = work / "background.jpg"
+    if not background.exists():
+        raise FileNotFoundError(
+            f"slide {slide.index}: the background it was built on is gone"
+        )
+    html = await llm.generate_slide_html(slide, background, issues, fmt)
+    await slide_html.screenshot(html, out_dir / f"{slide.index}.jpg", work, fmt)
+
+
+async def fix_flagged_slides(
+    script: CampaignScript,
+    reviews: list[ContentReview],
+    out_dir: Path,
+    fmt: CanvasFormat = STORY_FORMAT,
+) -> list[int]:
+    """Re-lay out every slide the review raised an issue about.
+
+    Issues only. A suggestion is an improvement to a slide that breaks no rule,
+    and redoing correct work on one is a good way to lose a slide that was
+    already right.
+    """
+    by_index = {s.index: s for s in script.slides}
+    flagged: list[tuple[SlideSpec, list[str]]] = []
+    for review in reviews:
+        index = _slide_index(review.file)
+        issues = [f.detail for f in review.findings if f.kind == "issue"]
+        if index in by_index and issues:
+            flagged.append((by_index[index], issues))
+
+    results = await asyncio.gather(
+        *(_fix_slide(slide, issues, out_dir, fmt) for slide, issues in flagged),
+        return_exceptions=True,
+    )
+
+    fixed: list[int] = []
+    for (slide, _issues), result in zip(flagged, results, strict=True):
+        if isinstance(result, BaseException):
+            # The slide as first rendered is still on disk, and the review that
+            # flagged it travels with the campaign, so the problem stays visible.
+            logger.warning("slide %s could not be re-laid out: %s", slide.index, result)
+            continue
+        fixed.append(slide.index)
+    return sorted(fixed)
 
 
 def save_project(campaign: Campaign) -> Path:
@@ -452,7 +587,8 @@ def save_project(campaign: Campaign) -> Path:
     payload = campaign.script.model_dump(mode="json")
     payload["missing_skus"] = campaign.missing_skus
     payload["failed_slides"] = [list(f) for f in campaign.failed_slides]
-    payload["verdicts"] = [v.model_dump(mode="json") for v in campaign.verdicts]
+    payload["reviews"] = [r.model_dump(mode="json") for r in campaign.reviews]
+    payload["fixed_slides"] = campaign.fixed_slides
     payload["product_references"] = [str(p) for p in campaign.product_references]
     payload["format"] = campaign.format_name
     (out_dir / "script.json").write_text(
@@ -505,7 +641,6 @@ async def create_campaign(
                 s,
                 out_dir,
                 llm.GEMINI_IMAGE_MODEL,
-                verify=verify,
                 references=references,
                 fmt=fmt,
                 cast=script.cast,
@@ -518,15 +653,26 @@ async def create_campaign(
 
     slide_paths: list[Path] = []
     failed: list[tuple[int, str]] = []
-    verdicts: list[SlideVerdict] = []
     for slide, result in zip(script.slides, results, strict=True):
         if isinstance(result, BaseException):
             failed.append((slide.index, f"{type(result).__name__}: {result}"))
             continue
-        path, verdict = result
-        slide_paths.append(path)
-        if verdict is not None:
-            verdicts.append(verdict)
+        slide_paths.append(result)
+
+    # The finished set is reviewed as a whole, the way content anybody made by
+    # hand is -- so a slide is judged beside the ones around it, and the
+    # storytelling rules have a sequence to bite on.
+    reviews: list[ContentReview] = []
+    fixed: list[int] = []
+    if verify and slide_paths:
+        try:
+            reviews = await verify_content(out_dir, fmt.name)
+            fixed = await fix_flagged_slides(script, reviews, out_dir, fmt)
+        except Exception as exc:  # noqa: BLE001
+            # Slides that exist beat no campaign at all: the review is the last
+            # step, and everything it judges is already on disk.
+            logger.warning("the finished campaign could not be reviewed: %s", exc)
+    _clear_work_dirs(out_dir)
 
     campaign = Campaign(
         topic=brief,
@@ -535,7 +681,8 @@ async def create_campaign(
         output_dir=out_dir,
         missing_skus=missing,
         failed_slides=failed,
-        verdicts=verdicts,
+        reviews=reviews,
+        fixed_slides=fixed,
         product_references=references,
         format_name=fmt.name,
     )
@@ -571,7 +718,7 @@ async def regenerate_slide(
         or [Path(r) for r in payload.get("product_references", []) if Path(r).exists()],
         footage=sorted(source.glob("*/frame_*.jpg")),
     )
-    rendered, _verdict = await _build_slide(
+    rendered = await _build_slide(
         revised,
         out_dir,
         GEMINI_IMAGE_PRO_MODEL,
@@ -579,6 +726,8 @@ async def regenerate_slide(
         cast=script.cast,
         subjects=subjects,
     )
+    # Nothing reviews this one afterwards, so its background is not kept.
+    _clear_work_dirs(out_dir)
 
     # Rewrite only this entry, preserving everything else in the file.
     payload["slides"] = [

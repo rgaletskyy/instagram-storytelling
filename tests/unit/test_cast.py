@@ -14,7 +14,6 @@ from instagram_marketing_agent.models import (
     CampaignScript,
     LifestyleShot,
     SlideSpec,
-    SlideVerdict,
 )
 
 pytestmark = pytest.mark.unit
@@ -63,7 +62,6 @@ class TestCastReachesGeneration:
     @staticmethod
     def _stub(monkeypatch, tmp_path, cast=CAST, human=(2, 4)):
         prompts: dict[int, str] = {}
-        seen_cast: list[str] = []
 
         monkeypatch.setattr(workflow, "OUTPUT_DIR", tmp_path)
 
@@ -107,9 +105,16 @@ class TestCastReachesGeneration:
             path.write_bytes(b"slide")
             return path
 
-        async def fake_verify(image, slide, fmt=None, cast=""):
-            seen_cast.append(cast)
-            return SlideVerdict(index=slide.index, passed=True)
+        async def fake_inspect(_path):
+            from instagram_marketing_agent.llm import _ImageDescription
+
+            return _ImageDescription(description="a slide", shows_product=False)
+
+        async def fake_review(image, description, fmt):
+            return []
+
+        async def fake_sequence(descriptions):
+            return []
 
         async def fake_inputs(_dir=None, artifacts_dir=None):
             return []
@@ -118,37 +123,33 @@ class TestCastReachesGeneration:
         monkeypatch.setattr(llm, "generate_image", fake_image)
         monkeypatch.setattr(llm, "generate_slide_html", fake_html)
         monkeypatch.setattr(slide_html, "screenshot", fake_shot)
-        monkeypatch.setattr(llm, "verify_slide", fake_verify)
+        monkeypatch.setattr(llm, "inspect_image", fake_inspect)
+        monkeypatch.setattr(llm, "review_content", fake_review)
+        monkeypatch.setattr(llm, "review_content_sequence", fake_sequence)
         monkeypatch.setattr(workflow, "describe_inputs", fake_inputs)
         monkeypatch.setattr(workflow, "get_products", lambda skus: ([], []))
-        return prompts, seen_cast
+        return prompts
 
     def test_slides_with_a_human_get_the_one_person_clause(
         self, monkeypatch, tmp_path
     ):
-        prompts, _ = self._stub(monkeypatch, tmp_path)
+        prompts = self._stub(monkeypatch, tmp_path)
         asyncio.run(workflow.create_story_campaign(topic="тема", slide_count=5))
         for index in (2, 4):
             assert "Exactly one person" in prompts[index], f"slide {index}"
 
     def test_slides_without_a_human_do_not(self, monkeypatch, tmp_path):
-        prompts, _ = self._stub(monkeypatch, tmp_path)
+        prompts = self._stub(monkeypatch, tmp_path)
         asyncio.run(workflow.create_story_campaign(topic="тема", slide_count=5))
         for index in (1, 3, 5):
             assert "Exactly one person" not in prompts[index]
 
     def test_every_human_slide_gets_the_same_instruction(self, monkeypatch, tmp_path):
-        prompts, _ = self._stub(monkeypatch, tmp_path, human=(1, 2, 3, 4, 5))
+        prompts = self._stub(monkeypatch, tmp_path, human=(1, 2, 3, 4, 5))
         asyncio.run(workflow.create_story_campaign(topic="тема", slide_count=5))
         clauses = {p.split("Exactly one person is in this image")[1] for p in
                    prompts.values()}
         assert len(clauses) == 1, "slides carry different person instructions"
-
-    def test_the_verifier_receives_the_cast(self, monkeypatch, tmp_path):
-        _, seen = self._stub(monkeypatch, tmp_path)
-        asyncio.run(workflow.create_story_campaign(topic="тема", slide_count=5))
-        assert seen and all(c == CAST for c in seen)
-
 
 class TestLifestyleCast:
     def test_a_frame_with_a_human_carries_the_cast(self, monkeypatch, tmp_path):

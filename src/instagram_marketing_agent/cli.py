@@ -5,15 +5,17 @@ from __future__ import annotations
 import argparse
 import asyncio
 import sys
+from pathlib import Path
 
 from .config import (
     DEFAULT_LIFESTYLE_IMAGES,
     DEFAULT_SLIDES,
     FORMATS,
+    INPUT_DIR,
     STORY_FORMAT,
 )
 from .ffmpeg import FFmpegMissingError
-from .workflow import create_campaign, create_lifestyle_content
+from .workflow import create_campaign, create_lifestyle_content, verify_content
 
 
 def _run_lifestyle(args) -> int:
@@ -48,6 +50,34 @@ def _run_lifestyle(args) -> int:
     return 0
 
 
+def _run_verify(args) -> int:
+    """Review finished content somebody else made, instead of generating any."""
+    try:
+        reviews = asyncio.run(
+            verify_content(Path(args.verify_content), args.format)
+        )
+    except (ValueError, FileNotFoundError, RuntimeError) as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
+
+    issues = suggestions = 0
+    for review in reviews:
+        print(f"\n{review.file}" + (f"  [{review.format}]" if review.format else ""))
+        if review.error:
+            print(f"  not reviewed: {review.error}")
+        elif not review.findings:
+            print("  nothing to change")
+        for finding in review.findings:
+            rule = f"  ({finding.rule})" if finding.rule else ""
+            print(f"  {finding.kind}: {finding.detail}{rule}")
+            if finding.kind == "issue":
+                issues += 1
+            else:
+                suggestions += 1
+    print(f"\n{issues} issues, {suggestions} suggestions across {len(reviews)} reviews")
+    return 0
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(
         prog="instagram-marketing-agent",
@@ -70,17 +100,33 @@ def main() -> int:
         f"of a campaign (default {DEFAULT_LIFESTYLE_IMAGES})",
     )
     parser.add_argument(
+        "--verify-content",
+        nargs="?",
+        const=str(INPUT_DIR),
+        default=None,
+        metavar="DIR",
+        help=f"review the finished slides or posts in DIR against the brand "
+        f"rules and print what to fix, instead of generating anything "
+        f"(default {INPUT_DIR})",
+    )
+    parser.add_argument(
         "--format",
         choices=sorted(FORMATS),
-        default=STORY_FORMAT.name,
-        help="story = 1080x1920 (9:16), post = 1080x1080 (1:1)",
+        # No default: --verify-content reads the artboard off each image, and a
+        # default here would silently force every one of them to story.
+        default=None,
+        help="story = 1080x1920 (9:16), post = 1080x1080 (1:1). Generating "
+        f"defaults to {STORY_FORMAT.name}; reviewing reads it off each image",
     )
     parser.add_argument(
         "--no-verify",
         action="store_true",
-        help="skip the design verification pass on each rendered slide",
+        help="skip the review of the finished slides",
     )
     args = parser.parse_args()
+
+    if args.verify_content is not None:
+        return _run_verify(args)
 
     if args.lifestyle is not None:
         return _run_lifestyle(args)
@@ -91,7 +137,7 @@ def main() -> int:
                 topic=args.topic,
                 slide_count=args.slides,
                 verify=not args.no_verify,
-                fmt=FORMATS[args.format],
+                fmt=FORMATS[args.format or STORY_FORMAT.name],
             )
         )
     except FFmpegMissingError as exc:
@@ -105,9 +151,13 @@ def main() -> int:
     print(f"slides: {len(campaign.slide_paths)}/{len(campaign.script.slides)}")
     if campaign.missing_skus:
         print(f"SKUs not in the catalogue: {', '.join(campaign.missing_skus)}")
-    for verdict in campaign.verdicts:
-        if not verdict.passed:
-            print(f"slide {verdict.index} flagged: {'; '.join(verdict.issues)}")
+    for review in campaign.reviews:
+        issues = [f.detail for f in review.findings if f.kind == "issue"]
+        if issues:
+            print(f"{review.file} flagged: {'; '.join(issues)}")
+    if campaign.fixed_slides:
+        fixed = ", ".join(str(i) for i in campaign.fixed_slides)
+        print(f"laid out again to fix those: slide {fixed}")
     for index, error in campaign.failed_slides:
         print(f"slide {index} failed: {error}", file=sys.stderr)
     return 0

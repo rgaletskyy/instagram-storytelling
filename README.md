@@ -5,8 +5,8 @@ Turns local images and a markdown brief into ready-to-post Instagram story slide
 Give it a topic brief (`content/input/topic.md`) naming a product SKU plus some product photos, and it
 looks the SKU up in the catalogue, describes the images, writes a slide-by-slide story script, generates
 a 9:16 background per slide — compositing your real product photo rather than inventing packaging — lays the copy out in HTML around whatever is in that background, screenshots
-it in a headless browser, checks the result against the brand guidelines, and saves the project to
-`content/output/`.
+it in a headless browser, reviews the finished set against the brand guidelines, lays out again any slide
+that came back with an issue, and saves the project to `content/output/`.
 
 Reachable three ways: an MCP server over stdio (for Claude and other AI chats), an MCP client, and a
 code-callable module.
@@ -51,6 +51,10 @@ uv run instagram-marketing-agent --slides 5 --no-verify    # skip the design rev
 uv run instagram-marketing-agent --lifestyle               # 3 lifestyle product photos (4:5)
 uv run instagram-marketing-agent --lifestyle 6             # ...or however many
 
+# review slides someone else made, instead of generating any
+uv run instagram-marketing-agent --verify-content          # reads content/input/
+uv run instagram-marketing-agent --verify-content ~/slides # ...or any folder
+
 # as an MCP server (stdio)
 uv run python -m instagram_marketing_agent.server
 ```
@@ -59,13 +63,35 @@ uv run python -m instagram_marketing_agent.server
 
 | Job | Model |
 |---|---|
-| Describe images / video frames | `claude-sonnet-5` |
+| Describe images / video frames | `claude-sonnet-5` (configurable, see below) |
 | Write the campaign script | `claude-opus-5` |
 | Generate a slide background | `gemini-3.1-flash-image` |
 | Lay the slide out in HTML (sees the background) | `claude-sonnet-5` |
-| Verify the rendered slide | `claude-sonnet-5` |
+| Review the finished slides | `claude-sonnet-5` |
 | Regenerate a slide background | `gemini-3-pro-image` |
 | Transcribe extracted audio | `gemini-3.5-transcribe` |
+
+## Choosing the description model
+
+The model that reads your photos is the one setting you can swap without
+touching the code. Put it in `.env`:
+
+```bash
+DESCRIBE_MODEL=deepseek-v4-flash-vision-exp
+DEEPSEEK_API_KEY=sk-...
+```
+
+Anything starting with `deepseek` goes to DeepSeek's chat-completions endpoint
+(`DEEPSEEK_BASE_URL`, default `https://api.deepseek.com`); any other id is a
+Claude model. Unset, it stays on `claude-sonnet-5`.
+
+**Only the description pass moves.** Writing the script, laying a slide out and
+verifying the render stay on Claude: they depend on its typed-output API, which
+DeepSeek has no equivalent for. DeepSeek's vision model is asked for JSON in the
+prompt instead, and a reply that will not parse fails the run rather than
+falling back to a description with the reference flags dropped — those flags
+decide which real photograph gets attached, and losing them silently is what
+puts an invented label on the packaging.
 
 ## Formats
 
@@ -99,6 +125,30 @@ would produce a plausible bottle carrying an invented label, which is worse than
 Around a sixth of the catalogue has no image URL. A photo in `content/input/` is accepted
 as a fallback only when the brief names a single product: with several SKUs there is no way
 to tell which one a loose photo depicts, and guessing puts the wrong packaging on a frame.
+
+## Reviewing content made by hand
+
+`--verify-content` goes the other way: instead of generating slides it reads
+finished ones. Drop the images an SMM manager built into `content/input/` and
+run it -- each is described with the same pass that reads campaign input, then
+judged against `slide-design-guidelines.md` and `smm_composition_rules.md`. The
+same review is `verify_content` over MCP, and it takes a single image as
+readily as a folder.
+
+**A generated campaign ends with this same review.** Slides are no longer
+checked one at a time as they render; the finished set is reviewed together,
+and any slide the review raises an *issue* about is laid out again with those
+issues fed back in — over the background it already has, so a layout complaint
+never turns into a different photograph. Suggestions are recorded and left
+alone. `script.json` keeps the review as it stood before those fixes, plus
+`fixed_slides`. `--no-verify` skips the whole step.
+
+It returns one entry per file with the issues found and the improvements
+suggested, plus one entry for the set read in filename order. That last pass is
+where the storytelling rules bite -- arc, momentum, one idea across the
+sequence -- so a single post is reviewed on its own merits and never against a
+structure it was never meant to have. Each finding names the section it comes
+from. The artboard is read off each image's proportions; `format` overrides it.
 
 ## Subjects come from photographs, not from words
 

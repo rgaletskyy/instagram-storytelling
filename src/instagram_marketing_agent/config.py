@@ -51,6 +51,29 @@ VIDEO_SUFFIXES = {".mp4", ".mov", ".m4v", ".avi"}
 
 ANTHROPIC_KEY_ENV = "ANTHROPIC_API_KEY"
 GEMINI_KEY_ENV = "GEMINI_API_KEY"
+# Only read when DESCRIBE_MODEL below names a DeepSeek model.
+DEEPSEEK_KEY_ENV = "DEEPSEEK_API_KEY"
+
+
+def load_dotenv() -> None:
+    """Read .env into the environment without adding a dependency.
+
+    Real environment variables win, matching the note in .env.example.
+    """
+    env_file = ROOT / ".env"
+    if not env_file.exists():
+        return
+    for line in env_file.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, _, value = line.partition("=")
+        os.environ.setdefault(key.strip(), value.strip())
+
+
+# .env is read here because the constants below consult the environment.
+load_dotenv()
+
 
 # --- Models ------------------------------------------------------------------
 # Pinned in specs/001-instagram-story-agent/plan.md. GEMINI_TRANSCRIBE_MODEL is a
@@ -62,6 +85,18 @@ CLAUDE_SCRIPT_MODEL = "claude-opus-5"
 GEMINI_IMAGE_MODEL = "gemini-3-pro-image"
 GEMINI_IMAGE_PRO_MODEL = "gemini-3-pro-image"
 GEMINI_TRANSCRIBE_MODEL = "gemini-3.5-transcribe"
+
+# Which model reads the input photographs and the frames sampled out of a video.
+# Set DESCRIBE_MODEL in .env to try a different one without touching the code.
+# An id beginning with "deepseek" is sent to DeepSeek's API rather than
+# Anthropic's and needs DEEPSEEK_API_KEY -- deepseek-v4-flash-vision-exp is
+# their vision model. Only the description pass moves: laying a slide out and
+# verifying it stay on Claude, whose typed-output API those steps are built on.
+DESCRIBE_MODEL = os.environ.get("DESCRIBE_MODEL", CLAUDE_DESCRIBE_MODEL)
+DEEPSEEK_MODEL_PREFIX = "deepseek"
+# DeepSeek serves the OpenAI chat-completions shape from here.
+DEEPSEEK_BASE_URL = os.environ.get("DEEPSEEK_BASE_URL", "https://api.deepseek.com")
+
 
 # --- Canvas ------------------------------------------------------------------
 # Story dimensions come from src/resources/slide-design-guidelines.md section 1.
@@ -160,6 +195,11 @@ FORMATS = {f.name: f for f in (STORY_FORMAT, POST_FORMAT, LIFESTYLE_FORMAT)}
 
 VERIFY_RETRIES = 1
 
+# What the reviewer may spend on one image, or on the whole set. Adaptive
+# thinking shares this budget and a review cut off by the limit comes back as no
+# review at all, so it is deliberately roomy.
+REVIEW_MAX_TOKENS = 14000
+
 # Video sampling: enough frames to follow what happens in a clip, capped so a
 # long video does not fan out into dozens of vision calls.
 MIN_VIDEO_FRAMES = 4
@@ -187,22 +227,6 @@ DEFAULT_SLIDES = 5
 SLIDE_ROLES = ("hook", "tension", "solution", "proof", "offer", "cta")
 
 
-def load_dotenv() -> None:
-    """Read .env into the environment without adding a dependency.
-
-    Real environment variables win, matching the note in .env.example.
-    """
-    env_file = ROOT / ".env"
-    if not env_file.exists():
-        return
-    for line in env_file.read_text(encoding="utf-8").splitlines():
-        line = line.strip()
-        if not line or line.startswith("#") or "=" not in line:
-            continue
-        key, _, value = line.partition("=")
-        os.environ.setdefault(key.strip(), value.strip())
-
-
 def _tool(env_var: str, default: str) -> str:
     """Resolve a binary path, treating a relative one as repo-relative.
 
@@ -217,9 +241,6 @@ def _tool(env_var: str, default: str) -> str:
         return str(candidate)
     return value
 
-
-# .env must be read before the constants below consult the environment.
-load_dotenv()
 
 # --- ffmpeg ------------------------------------------------------------------
 # Rendering needs a build with the drawtext filter, which requires libfreetype.

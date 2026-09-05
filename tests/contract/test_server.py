@@ -21,7 +21,7 @@ EXPECTED_TOOLS = {
     "render_story_slide",
     "save_project",
     "transcribe_video",
-    "validate_slide",
+    "verify_content",
 }
 
 
@@ -32,10 +32,10 @@ async def test_every_contracted_tool_is_registered():
 
 
 async def test_the_verifier_is_exposed_as_a_tool():
-    """validate_slide was deferred in the first iteration; it now exists."""
+    """The review is a tool of its own, not just the campaign's last step."""
     async with Client(mcp) as client:
         names = {t.name for t in (await client.list_tools()).tools}
-    assert "validate_slide" in names
+    assert "verify_content" in names
 
 
 async def test_every_brand_resource_is_published():
@@ -102,10 +102,10 @@ async def test_the_two_campaign_tools_take_the_same_arguments():
     assert story == post == {"topic", "slide_count", "verify"}
 
 
-async def test_render_and_validate_accept_a_format():
+async def test_render_and_review_accept_a_format():
     async with Client(mcp) as client:
         tools = {t.name: t for t in (await client.list_tools()).tools}
-    for name in ("render_story_slide", "validate_slide"):
+    for name in ("render_story_slide", "verify_content"):
         assert "format" in tools[name].input_schema["properties"], name
 
 

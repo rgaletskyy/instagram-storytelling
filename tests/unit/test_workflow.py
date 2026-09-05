@@ -12,9 +12,9 @@ import pytest
 from instagram_marketing_agent import llm, slide_html, workflow
 from instagram_marketing_agent.models import (
     CampaignScript,
+    ContentFinding,
     MediaDescription,
     SlideSpec,
-    SlideVerdict,
 )
 
 pytestmark = pytest.mark.unit
@@ -72,15 +72,19 @@ def stubbed(monkeypatch, tmp_path):
         path.write_bytes(b"slide")
         return path
 
-    async def fake_verify(image, slide, fmt=None, cast=""):
-        return SlideVerdict(index=slide.index, passed=True)
+    async def fake_review(image, description, fmt):
+        return []
+
+    async def fake_sequence(descriptions):
+        return []
 
     monkeypatch.setattr(llm, "inspect_image", fake_inspect)
     monkeypatch.setattr(llm, "generate_script", fake_script)
     monkeypatch.setattr(llm, "generate_image", fake_image)
     monkeypatch.setattr(llm, "generate_slide_html", fake_html)
     monkeypatch.setattr(slide_html, "screenshot", fake_shot)
-    monkeypatch.setattr(llm, "verify_slide", fake_verify)
+    monkeypatch.setattr(llm, "review_content", fake_review)
+    monkeypatch.setattr(llm, "review_content_sequence", fake_sequence)
 
     async def fake_inputs(_dir=None, artifacts_dir=None):
         return [
@@ -159,60 +163,124 @@ def test_each_run_gets_its_own_folder(stubbed):
     assert first.output_dir != second.output_dir
 
 
-def test_a_verdict_is_recorded_for_every_slide(stubbed):
+def _flags(*filenames, kind="issue", detail="text over the face"):
+    """A reviewer that objects to the named slides and passes the rest."""
+
+    async def review(image, description, fmt):
+        if image.name in filenames:
+            return [ContentFinding(kind=kind, detail=detail, rule="1.2")]
+        return []
+
+    return review
+
+
+def test_the_finished_set_is_reviewed_as_a_whole(stubbed):
+    """Slides are judged together at the end, not one at a time as they render."""
     campaign = asyncio.run(workflow.create_story_campaign(topic="тема", slide_count=5))
-    assert [v.index for v in campaign.verdicts] == [1, 2, 3, 4, 5]
+
+    assert [r.file for r in campaign.reviews] == [
+        "1.jpg", "2.jpg", "3.jpg", "4.jpg", "5.jpg", "(the set as a whole)",
+    ]
     saved = json.loads((campaign.output_dir / "script.json").read_text(encoding="utf-8"))
-    assert len(saved["verdicts"]) == 5
+    assert len(saved["reviews"]) == 6
+    assert saved["fixed_slides"] == []
 
 
-def test_a_rejected_slide_is_retried_with_the_issues_as_feedback(stubbed, monkeypatch):
-    """The retry must be told what was wrong, or it just repeats the mistake."""
+def test_a_flagged_slide_is_laid_out_again_with_the_issues(stubbed, monkeypatch):
+    """The second attempt must be told what was wrong, or it repeats the mistake."""
     seen: list[list[str] | None] = []
-    attempts = {"n": 0}
 
     async def counting_html(slide, background, issues=None, fmt=None):
         if slide.index == 1:
             seen.append(issues)
         return "<html></html>"
 
-    async def picky(image, slide, fmt=None, cast=""):
-        if slide.index == 1:
-            attempts["n"] += 1
-            if attempts["n"] == 1:
-                return SlideVerdict(index=1, passed=False, issues=["text over the face"])
-        return SlideVerdict(index=slide.index, passed=True)
-
     monkeypatch.setattr(llm, "generate_slide_html", counting_html)
-    monkeypatch.setattr(llm, "verify_slide", picky)
+    monkeypatch.setattr(llm, "review_content", _flags("1.jpg"))
     campaign = asyncio.run(workflow.create_story_campaign(topic="тема", slide_count=5))
 
     assert seen == [None, ["text over the face"]]
-    assert next(v for v in campaign.verdicts if v.index == 1).passed
+    assert campaign.fixed_slides == [1]
+    assert len(campaign.slide_paths) == 5
 
 
-def test_a_slide_that_never_passes_is_still_kept_and_reported(stubbed, monkeypatch):
-    async def always_fail(image, slide, fmt=None, cast=""):
-        return SlideVerdict(index=slide.index, passed=False, issues=["still ugly"])
+def test_only_the_flagged_slides_are_touched(stubbed, monkeypatch):
+    laid_out: list[int] = []
 
-    monkeypatch.setattr(llm, "verify_slide", always_fail)
+    async def counting_html(slide, background, issues=None, fmt=None):
+        if issues:
+            laid_out.append(slide.index)
+        return "<html></html>"
+
+    monkeypatch.setattr(llm, "generate_slide_html", counting_html)
+    monkeypatch.setattr(llm, "review_content", _flags("2.jpg", "4.jpg"))
+    campaign = asyncio.run(workflow.create_story_campaign(topic="тема", slide_count=5))
+
+    assert sorted(laid_out) == [2, 4]
+    assert campaign.fixed_slides == [2, 4]
+
+
+def test_a_suggestion_alone_does_not_redo_a_slide(stubbed, monkeypatch):
+    """It breaks no rule; redoing it risks losing a slide that was already right."""
+    monkeypatch.setattr(
+        llm, "review_content", _flags("1.jpg", kind="suggestion", detail="warmer copy")
+    )
+    campaign = asyncio.run(workflow.create_story_campaign(topic="тема", slide_count=5))
+
+    assert campaign.fixed_slides == []
+    assert campaign.reviews[0].findings[0].kind == "suggestion"
+
+
+def test_a_slide_that_cannot_be_fixed_is_kept_and_still_reported(stubbed, monkeypatch):
+    """The first render stays on disk, and the review that flagged it is saved."""
+
+    async def fails_on_the_second_pass(slide, background, issues=None, fmt=None):
+        if issues:
+            raise RuntimeError("no layout returned for slide 1")
+        return "<html></html>"
+
+    monkeypatch.setattr(llm, "generate_slide_html", fails_on_the_second_pass)
+    monkeypatch.setattr(llm, "review_content", _flags("1.jpg"))
     campaign = asyncio.run(workflow.create_story_campaign(topic="тема", slide_count=5))
 
     assert len(campaign.slide_paths) == 5
-    assert all(not v.passed for v in campaign.verdicts)
+    assert campaign.fixed_slides == []
     assert campaign.failed_slides == []
+    assert campaign.reviews[0].findings[0].detail == "text over the face"
+
+
+def test_a_review_that_blows_up_does_not_sink_the_campaign(stubbed, monkeypatch):
+    """It is the last step: everything it judges is already written."""
+
+    async def boom(image, description, fmt):
+        raise RuntimeError("the vision API is down")
+
+    monkeypatch.setattr(llm, "review_content", boom)
+    campaign = asyncio.run(workflow.create_story_campaign(topic="тема", slide_count=5))
+
+    assert len(campaign.slide_paths) == 5
+    # Reported as an error, not as a finding: a reviewer that never ran must not
+    # send every slide back to be laid out again over an issue nobody saw.
+    assert all("the vision API is down" in r.error for r in campaign.reviews[:5])
+    assert campaign.fixed_slides == []
 
 
 def test_verification_can_be_skipped(stubbed, monkeypatch):
-    async def boom(image, slide, fmt=None, cast=""):
-        raise AssertionError("verifier must not run when verify=False")
+    async def boom(image, description, fmt):
+        raise AssertionError("the reviewer must not run when verify=False")
 
-    monkeypatch.setattr(llm, "verify_slide", boom)
+    monkeypatch.setattr(llm, "review_content", boom)
     campaign = asyncio.run(
         workflow.create_story_campaign(topic="тема", slide_count=5, verify=False)
     )
-    assert campaign.verdicts == []
+    assert campaign.reviews == []
     assert len(campaign.slide_paths) == 5
+
+
+def test_the_scratch_folders_do_not_survive_the_run(stubbed):
+    """The backgrounds are kept only until the review and the fixes are done."""
+    campaign = asyncio.run(workflow.create_story_campaign(topic="тема", slide_count=5))
+    assert list(campaign.output_dir.glob(".slide_*")) == []
 
 
 def test_only_product_photos_are_used_as_references(stubbed):
@@ -529,32 +597,6 @@ class TestVideoArtifacts:
             asyncio.run(workflow.describe_video(video, artifacts_dir=artifacts))
 
         assert sorted(p.name for p in artifacts.iterdir()) == ["first", "second"]
-
-
-def test_a_failed_retry_keeps_the_render_that_worked(stubbed, monkeypatch):
-    """A slide that rendered once must not be lost when the retry errors."""
-    attempts = {"n": 0}
-
-    async def flaky_html(slide, background, issues=None, fmt=None):
-        if slide.index == 1:
-            attempts["n"] += 1
-            if attempts["n"] > 1:
-                raise RuntimeError("no layout returned for slide 1")
-        return "<html></html>"
-
-    async def rejects_first(image, slide, fmt=None, cast=""):
-        return SlideVerdict(
-            index=slide.index, passed=slide.index != 1, issues=["try again"]
-        )
-
-    monkeypatch.setattr(llm, "generate_slide_html", flaky_html)
-    monkeypatch.setattr(llm, "verify_slide", rejects_first)
-
-    campaign = asyncio.run(
-        workflow.create_story_campaign(topic="тема", slide_count=5)
-    )
-    assert len(campaign.slide_paths) == 5
-    assert campaign.failed_slides == []
 
 
 def test_a_first_attempt_that_fails_is_still_an_error(stubbed, monkeypatch):

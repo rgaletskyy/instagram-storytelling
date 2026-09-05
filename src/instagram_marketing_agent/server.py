@@ -73,7 +73,10 @@ def _campaign_payload(campaign) -> dict:
         "script": campaign.script.model_dump(mode="json"),
         "missing_skus": campaign.missing_skus,
         "failed_slides": [list(f) for f in campaign.failed_slides],
-        "verdicts": [v.model_dump(mode="json") for v in campaign.verdicts],
+        # The review of the finished set, as it stood before `fixed_slides`
+        # were laid out again.
+        "reviews": [r.model_dump(mode="json") for r in campaign.reviews],
+        "fixed_slides": campaign.fixed_slides,
     }
 
 
@@ -246,26 +249,27 @@ async def render_story_slide(
     )
 
 
+
 @mcp.tool()
 @_reporting
-async def validate_slide(
-    image_path: str,
-    overlay_text: str,
-    role: str = "solution",
-    slide_index: int = 1,
-    format: str = "story",
-) -> dict:
-    """Check a rendered slide against the design guidelines and its own copy."""
-    slide = SlideSpec(
-        index=slide_index,
-        role=role,
-        image_prompt="",
-        overlay_text=overlay_text,
+async def verify_content(
+    target: str | None = None, format: str | None = None
+) -> list[dict]:
+    """Review finished story slides or posts against the brand rules.
+
+    `target` is a folder of them or a single image; without one, the input
+    folder (`content/input`). Each image is described and judged against the
+    design guidelines and the composition rules; a folder is read in filename
+    order and also judged as a sequence. Returns one entry per file -- plus one
+    for the set -- carrying the issues found and the improvements suggested.
+
+    `format` ("story", "post" or "lifestyle") forces the artboard; left out, it
+    is read off each image's proportions.
+    """
+    reviews = await workflow.verify_content(
+        Path(target) if target else None, format
     )
-    verdict = await llm.verify_slide(
-        Path(image_path), slide, FORMATS.get(format, STORY_FORMAT)
-    )
-    return verdict.model_dump(mode="json")
+    return [review.model_dump(mode="json") for review in reviews]
 
 
 # --- Video tools -------------------------------------------------------------
@@ -410,12 +414,14 @@ Build one slide at a time:
   format)` -- lays the copy out over that background in HTML and screenshots it.
   `format` is "story" (1080x1920) or "post" (1080x1080). The layout is composed with the background in view, so the copy is
   placed around the subject rather than at a fixed position.
-- `validate_slide(image_path, overlay_text, role, slide_index)` -- reviews the
-  rendered slide against the design guidelines. Returns `passed` plus specific
-  `issues`. Worth calling after any manual render.
 - `regenerate_slide(project_dir, slide_index, comment)` -- redo one slide of a
   saved campaign from a written note, leaving the others untouched.
 - `save_project(output_dir)` -- confirm where a campaign was written.
+- `verify_content(target, format)` -- reviews finished slides or posts against
+  the design guidelines and the composition rules. `target` is a folder or a
+  single image; without one, the input folder. Returns issues and improvement
+  suggestions per file. This is what the campaign tools run on themselves as
+  their last step, and it is worth calling after any manual render.
 
 ## Things that are easy to get wrong
 

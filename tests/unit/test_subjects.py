@@ -184,7 +184,7 @@ class TestPromptContract:
         )
         asyncio.run(
             workflow._build_slide(
-                slide, tmp_path, "model", verify=False, subjects=subjects
+                slide, tmp_path, "model", subjects=subjects
             )
         )
         assert attached[0] == [Path("dog.jpg")]

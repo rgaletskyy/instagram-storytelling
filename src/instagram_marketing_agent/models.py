@@ -100,6 +100,31 @@ class LifestyleFrame(BaseModel):
     verdict: SlideVerdict | None = None
 
 
+class ContentFinding(BaseModel):
+    """One thing worth changing about a finished piece of content.
+
+    An issue is a breach of the rule documents; a suggestion is content that
+    breaks nothing but would land better. `rule` names the section it comes
+    from, so a finding can be checked rather than taken on trust.
+    """
+
+    kind: Literal["issue", "suggestion"]
+    detail: str
+    rule: str = ""
+
+
+class ContentReview(BaseModel):
+    """What came back about one image, or about a set read in order."""
+
+    file: str
+    format: str = ""
+    description: str = ""
+    findings: list[ContentFinding] = Field(default_factory=list)
+    # Why this file could not be read or reviewed at all. Deliberately not a
+    # finding: nothing was judged, so there is nothing to act on.
+    error: str = ""
+
+
 class MediaDescription(BaseModel):
     """An input asset and the description derived from it."""
 
@@ -129,6 +154,8 @@ class Campaign(BaseModel):
     output_dir: Path | None = None
     missing_skus: list[str] = Field(default_factory=list)
     failed_slides: list[tuple[int, str]] = Field(default_factory=list)
-    verdicts: list[SlideVerdict] = Field(default_factory=list)
+    # The review of the finished slides, as they were before any fix below.
+    reviews: list[ContentReview] = Field(default_factory=list)
+    fixed_slides: list[int] = Field(default_factory=list)
     product_references: list[Path] = Field(default_factory=list)
     format_name: str = "story"

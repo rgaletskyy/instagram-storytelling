@@ -7,13 +7,16 @@ import mimetypes
 from pathlib import Path
 
 from anthropic import AsyncAnthropic
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from .config import (
     BODY_MAX_PX,
     CLAUDE_DESCRIBE_MODEL,
     CLAUDE_SCRIPT_MODEL,
+    DEEPSEEK_MODEL_PREFIX,
+    DESCRIBE_MODEL,
     DESIGN_GUIDELINES,
+    FORMATS,
     GEMINI_IMAGE_MODEL,
     GEMINI_TRANSCRIBE_MODEL,
     GOOGLE_FONTS_HREF,
@@ -22,6 +25,7 @@ from .config import (
     MAX_LIFESTYLE_IMAGES,
     MAX_SLIDES,
     MIN_SLIDES,
+    REVIEW_MAX_TOKENS,
     SIDE_MARGIN,
     STORY_FORMAT,
     STORYTELLING_RULES,
@@ -30,6 +34,7 @@ from .config import (
 )
 from .models import (
     CampaignScript,
+    ContentFinding,
     LifestyleSet,
     LifestyleShot,
     Product,
@@ -143,8 +148,34 @@ class _ImageDescription(BaseModel):
     shows_person: bool = False
 
 
+# Asked of whichever model config.DESCRIBE_MODEL names, so both providers are
+# judging the photograph against the same brief.
+_INSPECT_INSTRUCTIONS = (
+    "Describe this image in detail for someone writing an "
+    "Instagram story about it. Cover the subject, setting, "
+    "colours, mood and any product or packaging visible.\n\n"
+    "Then flag what this photo could serve as a "
+    "reference for, judging only whether the subject is "
+    "clear enough to copy from:\n"
+    "  shows_product - a product container (bottle, tube, "
+    "jar, pack) with its own branding is clearly visible\n"
+    "  shows_dog     - a dog is clearly visible, its face "
+    "and coat legible\n"
+    "  shows_person  - a person is visible: hands, arms, "
+    "or body"
+)
+
+# DeepSeek has no typed-output API, so the shape is spelled out in the prompt.
+# Their JSON mode also requires the word "json" to appear in it.
+_INSPECT_JSON_SHAPE = (
+    "\n\nReply with one json object and nothing else, in exactly this shape:\n"
+    '{"description": "...", "shows_product": true, "shows_dog": false, '
+    '"shows_person": false}'
+)
+
+
 async def describe_image(image_path: str | Path) -> str:
-    """Describe an image in detail with Sonnet."""
+    """Describe an image in detail with the configured description model."""
     return (await inspect_image(image_path)).description
 
 
@@ -155,8 +186,10 @@ async def inspect_image(image_path: str | Path) -> _ImageDescription:
     generation instead of letting the model invent packaging.
     """
     path = Path(image_path)
+    if DESCRIBE_MODEL.startswith(DEEPSEEK_MODEL_PREFIX):
+        return await _inspect_with_deepseek(path)
     response = await anthropic_client().messages.parse(
-        model=CLAUDE_DESCRIBE_MODEL,
+        model=DESCRIBE_MODEL,
         max_tokens=4000,
         thinking={"type": "adaptive"},
         messages=[
@@ -164,23 +197,7 @@ async def inspect_image(image_path: str | Path) -> _ImageDescription:
                 "role": "user",
                 "content": [
                     _image_block(path),
-                    {
-                        "type": "text",
-                        "text": (
-                            "Describe this image in detail for someone writing an "
-                            "Instagram story about it. Cover the subject, setting, "
-                            "colours, mood and any product or packaging visible.\n\n"
-                            "Then flag what this photo could serve as a "
-                            "reference for, judging only whether the subject is "
-                            "clear enough to copy from:\n"
-                            "  shows_product - a product container (bottle, tube, "
-                            "jar, pack) with its own branding is clearly visible\n"
-                            "  shows_dog     - a dog is clearly visible, its face "
-                            "and coat legible\n"
-                            "  shows_person  - a person is visible: hands, arms, "
-                            "or body"
-                        ),
-                    },
+                    {"type": "text", "text": _INSPECT_INSTRUCTIONS},
                 ],
             }
         ],
@@ -190,6 +207,33 @@ async def inspect_image(image_path: str | Path) -> _ImageDescription:
     if described is None:
         return _ImageDescription(description="", shows_product=False)
     return described
+
+
+async def _inspect_with_deepseek(path: Path) -> _ImageDescription:
+    """The same inspection, run on a DeepSeek vision model.
+
+    An unusable reply is raised rather than downgraded to a bare description:
+    the flags decide which real photograph is attached when the product is
+    generated, and losing them quietly puts an invented label on the packaging.
+    """
+    from .deepseek import describe_json
+
+    data, media_type = _api_ready(path)
+    payload = await describe_json(
+        model=DESCRIBE_MODEL,
+        image=data,
+        media_type=media_type,
+        prompt=_INSPECT_INSTRUCTIONS + _INSPECT_JSON_SHAPE,
+    )
+    description = str(payload.get("description") or "").strip()
+    if not description:
+        raise RuntimeError(f"{DESCRIBE_MODEL} returned no description for {path.name}")
+    return _ImageDescription(
+        description=description,
+        shows_product=bool(payload.get("shows_product")),
+        shows_dog=bool(payload.get("shows_dog")),
+        shows_person=bool(payload.get("shows_person")),
+    )
 
 
 def _rules() -> str:
@@ -685,30 +729,74 @@ async def generate_slide_html(
     return layout.html
 
 
-async def verify_slide(
-    image: Path,
-    slide: SlideSpec,
-    fmt: CanvasFormat = STORY_FORMAT,
-    cast: str = "",
-) -> SlideVerdict:
-    """Check a rendered slide against the design guidelines and its own copy."""
+class _Findings(BaseModel):
+    """The reviewer's output schema. Empty is a legitimate answer."""
+
+    findings: list[ContentFinding] = Field(default_factory=list)
+
+
+def format_for_image(image: Path) -> CanvasFormat:
+    """Pick the artboard from the picture's own proportions.
+
+    Content made by hand arrives as a file and nothing else, so which format it
+    is has to be read off the image rather than taken from a caller.
+    """
+    import pillow_heif
+    from PIL import Image
+
+    pillow_heif.register_heif_opener()
+    with Image.open(image) as im:
+        width, height = im.size
+    ratio = width / max(height, 1)
+    return min(FORMATS.values(), key=lambda f: abs(f.width / f.height - ratio))
+
+
+def _review_system() -> list[dict]:
+    """Both rule documents, cached across every image in one review.
+
+    Byte-identical between the per-image and the sequence pass so the two share
+    one cache entry.
+    """
+    return [
+        {
+            "type": "text",
+            "text": (
+                "You review finished Instagram content for the HealthyDoggo "
+                "brand against the two normative documents below: the design "
+                "system, and the storytelling and scene composition rules. The "
+                "work was made by hand by a social media manager, not generated "
+                "-- so judge what is there and say how it could be better. Be "
+                "strict but fair: report only real problems you can see, and "
+                "never invent a finding to fill the list.\n\n"
+                "Write every finding in Ukrainian -- both `detail` and `rule` "
+                "-- because the people who act on them work in Ukrainian. "
+                "`kind` is not prose: it stays exactly 'issue' or "
+                "'suggestion'.\n\n"
+                + _guidelines()
+                + "\n\n"
+                + _rules()
+            ),
+            "cache_control": {"type": "ephemeral"},
+        }
+    ]
+
+
+async def review_content(
+    image: Path, description: str, fmt: CanvasFormat
+) -> list[ContentFinding]:
+    """Judge one finished slide or post against both rule documents.
+
+    The written description comes from the same pass that reads campaign input,
+    so the reviewer works from what the picture was already understood to show
+    as well as from the picture itself.
+    """
     response = await anthropic_client().messages.parse(
         model=CLAUDE_DESCRIBE_MODEL,
-        # Generous: adaptive thinking shares this budget, and a verdict truncated
-        # by max_tokens comes back as no verdict at all.
-        max_tokens=8000,
+        # Generous: adaptive thinking shares this budget, and a review truncated
+        # by max_tokens comes back as no review at all.
+        max_tokens=REVIEW_MAX_TOKENS,
         thinking={"type": "adaptive"},
-        system=[
-            {
-                "type": "text",
-                "text": (
-                    "You review rendered Instagram story slides against the design "
-                    "system below. Be strict but fair: report only real, visible "
-                    "problems.\n\n" + _guidelines()
-                ),
-                "cache_control": {"type": "ephemeral"},
-            }
-        ],
+        system=_review_system(),
         messages=[
             {
                 "role": "user",
@@ -717,51 +805,105 @@ async def verify_slide(
                     {
                         "type": "text",
                         "text": (
-                            f"This is slide {slide.index} (role: {slide.role}).\n"
-                            f"It must display this copy:\n{slide.overlay_text}\n"
-                            + _cast_check(cast)
-                            + "\n"
-                            "Judge the WHOLE text block -- the card, panel, "
-                            "scrim or gradient behind the copy counts as part "
-                            "of it, not just the letters.\n\n"
-                            "Fail the slide if any of these is true:\n"
-                            "- the text block or its panel covers, touches, or "
-                            "cuts across the dog's face, eyes, or the product\n"
-                            "- the panel spans the full width edge to edge "
-                            "instead of being inset from both sides\n"
-                            f"- the text block is taller than about a quarter of "
-                            f"the frame ({fmt.text_block_max_h}px of "
-                            f"{fmt.height}px)\n"
-                            "- an opaque band sits across the middle of the "
-                            "image, hiding a large part of the photograph\n"
-                            "- text is cut off, overflowing, or overlapping itself\n"
-                            f"- text sits outside y={fmt.safe_top}..{fmt.safe_bottom}px\n"
-                            "- text is unreadable against the background\n"
-                            "- the copy shown differs from the copy above\n"
-                            "- the layout looks careless or unbalanced\n"
-                            + _cast_failures(cast)
-                            + "\n"
-                            "Set passed=false with specific, actionable issues, or "
-                            "passed=true with an empty issues list."
+                            f"{image.name} -- a finished {fmt.name} piece, "
+                            f"{fmt.width}x{fmt.height}px.\n\n"
+                            f"Read as: {description}\n\n"
+                            "Report what is wrong and what would make it "
+                            "stronger. Cover at least:\n"
+                            f"- the text-safe area: copy inside "
+                            f"y={fmt.safe_top}..{fmt.safe_bottom}px "
+                            f"({fmt.safe_note})\n"
+                            "- the whole text block, including the card, plate, "
+                            "scrim or gradient behind the copy: inset from both "
+                            "sides rather than edge to edge, and no taller than "
+                            f"about {fmt.text_block_max_h}px of {fmt.height}px\n"
+                            "- whether that block covers a dog's face or eyes, "
+                            "or the product\n"
+                            "- text cut off, overflowing, overlapping itself, "
+                            "or unreadable against what sits behind it\n"
+                            "- one clear focal point; photography, colour, type "
+                            "and decorative elements against the brand "
+                            "foundations\n"
+                            "- the copy: concise, one language, addressed to "
+                            "one person, doing one job on this slide\n"
+                            "- anything the do/don't and QA checklists reject\n\n"
+                            "Judge only this image. Leave anything that needs "
+                            "the rest of the set -- sequence structure, whether "
+                            "the arc works -- to the pass that sees them all.\n\n"
+                            "kind='issue' for a breach of the documents, "
+                            "kind='suggestion' for something that breaks no rule "
+                            "but would land better. Name the section in `rule`. "
+                            "One specific, actionable sentence per finding, "
+                            "saying what and where. Return nothing for content "
+                            "that is already right."
                         ),
                     },
                 ],
             }
         ],
-        output_format=SlideVerdict,
+        output_format=_Findings,
     )
-    verdict = response.parsed_output
-    if verdict is None:
-        # Never pass a slide the verifier could not actually judge -- a silent
-        # pass would make a broken verifier indistinguishable from a clean run.
-        return SlideVerdict(
-            index=slide.index,
-            passed=False,
-            issues=["verifier returned no verdict"],
-            notes=f"stop_reason={response.stop_reason}",
-        )
-    verdict.index = slide.index
-    return verdict
+    review = response.parsed_output
+    if review is None:
+        # An empty list would make a review that never happened look like a
+        # clean bill of health.
+        return [
+            ContentFinding(
+                kind="issue",
+                detail=(
+                    f"{image.name} could not be reviewed: the reviewer returned "
+                    f"nothing (stop_reason={response.stop_reason})"
+                ),
+            )
+        ]
+    return [f for f in review.findings if f.detail.strip()]
+
+
+async def review_content_sequence(descriptions: list[str]) -> list[ContentFinding]:
+    """Judge a set read in order, on what one frame cannot show.
+
+    Descriptions rather than the images: the sequence rules are about what the
+    slides say and in what order, which the written reading already carries.
+    """
+    numbered = "\n\n".join(
+        f"Slide {i}: {text}" for i, text in enumerate(descriptions, 1)
+    )
+    response = await anthropic_client().messages.parse(
+        model=CLAUDE_DESCRIBE_MODEL,
+        max_tokens=REVIEW_MAX_TOKENS,
+        thinking={"type": "adaptive"},
+        system=_review_system(),
+        messages=[
+            {
+                "role": "user",
+                "content": (
+                    f"These {len(descriptions)} pieces are one sequence, in "
+                    f"filename order:\n\n{numbered}\n\n"
+                    "Judge only what the set as a whole shows: one main idea "
+                    "across the sequence, one communication job per slide, an "
+                    "opening that earns the next tap, forward momentum, a single "
+                    "clear final action, and the same protagonist throughout.\n\n"
+                    "kind='issue' for a breach of the sequence rules, "
+                    "kind='suggestion' for an improvement. Name the section in "
+                    "`rule`. Say which slide each finding is about. Return "
+                    "nothing if the sequence holds."
+                ),
+            }
+        ],
+        output_format=_Findings,
+    )
+    review = response.parsed_output
+    if review is None:
+        return [
+            ContentFinding(
+                kind="issue",
+                detail=(
+                    "the set could not be reviewed as a sequence: the reviewer "
+                    f"returned nothing (stop_reason={response.stop_reason})"
+                ),
+            )
+        ]
+    return [f for f in review.findings if f.detail.strip()]
 
 
 # --- Lifestyle content -------------------------------------------------------
