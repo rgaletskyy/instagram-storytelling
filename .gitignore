@@ -41,6 +41,10 @@ Thumbs.db
 # and carries a couple of rows so a fresh clone can run.
 src/resources/products.xlsx
 
+# The image library's inventory and the index built from it: real Drive links
+# and internal folder paths, so they stay local like the catalogue does.
+src/resources/images_index/
+
 # Campaign content: source photos and generated stories stay local.
 # Everything under content/ is ignored, so a new working folder cannot be
 # committed by accident; only the two .gitkeep files are kept, so the app has

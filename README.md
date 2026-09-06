@@ -57,6 +57,11 @@ uv run instagram-marketing-agent --verify-content ~/slides # ...or any folder
 
 # as an MCP server (stdio)
 uv run python -m instagram_marketing_agent.server
+
+uv run instagram-marketing-agent --index-images                             # all pilot images
+uv run instagram-marketing-agent --index-images 20                          # cap this run at 20
+uv run instagram-marketing-agent --index-images --index-all                 # whole library
+uv run instagram-marketing-agent --index-images --index-folder Dogs_from_Grooming
 ```
 
 ## Models
@@ -187,6 +192,69 @@ build, hands and wardrobe. Every image that features a human carries that descri
 the verifier rejects a frame showing a different person or a second one. Without it each
 image is generated independently and invents its own owner, so the same story ends up with
 a different pair of hands on every slide.
+
+## Cataloguing the image library
+
+A second tool, separate from the campaign pipeline: it generates nothing and
+runs over the whole Drive folder rather than `content/input/`.
+
+```bash
+# from the main CLI
+uv run instagram-marketing-agent --index-images        # the 782 pilot rows
+uv run instagram-marketing-agent --index-images 20     # ...capped at 20 this run
+uv run instagram-marketing-agent --index-images --index-all
+uv run instagram-marketing-agent --index-images --index-folder Dogs_from_Grooming
+
+# or the dedicated script, which also takes --inventory, --out and --model
+uv run image-index --limit 20
+```
+
+By default only the 782 rows the inventory marks `Рекомендовано (пілот)` are
+indexed. **Six of the eleven top-level folders carry no such mark at all** —
+`B2B-партнери`, `Гайд. 21 проблема`, `Інфоприводи`, `Експерти Блогери`,
+`Відправки`, `Brand Influencers` — so asking for one of those without
+`--index-all` matches nothing, and says so rather than pretending the work is
+already done.
+
+It reads `src/resources/images_index/index_inventory.xlsx` (sheet
+`Повний список`), downloads each image by the **Google Drive link held on the
+cell** -- the cell text is only ever the word "Відкрити" -- describes it, and
+writes `images_index.xlsx` in the shape of `index_pilot.xlsx`: the same
+thirteen columns, in Ukrainian, with `—` in a field that does not apply. Only
+rows the inventory types as `зображення` are read; video and stray files are
+skipped.
+
+The description is written for a machine, not a browser: a later step matches a
+brief against it to pick images automatically, so whatever it leaves out is
+invisible to that choice. Each one runs 6-10 sentences covering the animal
+(breed, age, coat, pose, gaze, collar), the people and what they are doing, the
+product and whether its label reads, the location and props, the light and the
+dominant colours, the shot (close/medium/wide, angle, orientation, **where the
+frame is free for copy**) and the technical state — blur, watermarks, crops.
+Tags carry the same facts as 10-18 search terms. Nothing is inferred from
+outside the frame.
+
+Runs are **resumable and additive**. An existing index is extended, not
+replaced: the workbook is saved every ten images, so an interrupted run over
+thousands of files keeps what it had. An image that cannot be downloaded or
+described is reported and left out, so the next run retries it rather than
+leaving a row nobody notices.
+
+**An image counts as already indexed when its `Файл` matches a row in
+`images_index.xlsx`** — filename only, folder ignored. Filenames are not unique
+in the library: 237 of them repeat, mostly between subfolders of one top-level
+folder, so the first row to carry a name is described and every later row with
+that name is skipped as a duplicate. Each run prints how many it skipped for
+that reason. Across the whole library that rule puts about 730 distinct images
+out of reach; match on `Шлях` or the Drive id instead if they are wanted.
+
+Five images are downloaded and described at once. Raise or lower that with
+`--index-parallel N` (`--parallel N` on the script) — the ceiling is about not
+opening three thousand sockets at once, and about the rate limits on the vision
+API, rather than about speed.
+
+Descriptions follow `DESCRIBE_MODEL` like the rest of the app; `--model`
+overrides it for one run.
 
 ## Product catalogue
 

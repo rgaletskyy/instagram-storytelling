@@ -30,6 +30,7 @@ dev = [
 
 [project.scripts]
 instagram-marketing-agent = "instagram_marketing_agent.cli:main"
+image-index = "instagram_marketing_agent.image_index:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/instagram_marketing_agent"]
