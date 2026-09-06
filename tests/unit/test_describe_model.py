@@ -6,8 +6,9 @@ import io
 import pytest
 from PIL import Image
 
-from instagram_marketing_agent import config, deepseek, llm
+from instagram_marketing_agent import config, llm
 from instagram_marketing_agent.config import CLAUDE_DESCRIBE_MODEL
+from instagram_marketing_agent.llm import deepseek, describe
 
 pytestmark = pytest.mark.unit
 
@@ -53,7 +54,7 @@ async def test_a_deepseek_id_routes_to_deepseek(monkeypatch, photo):
             "shows_person": False,
         }
 
-    monkeypatch.setattr(llm, "DESCRIBE_MODEL", DEEPSEEK_VISION)
+    monkeypatch.setattr(describe, "DESCRIBE_MODEL", DEEPSEEK_VISION)
     monkeypatch.setattr(deepseek, "describe_json", fake)
 
     described = await llm.inspect_image(photo)
@@ -73,7 +74,7 @@ async def test_a_reply_with_no_description_fails_the_run(monkeypatch, photo):
     async def fake(model, image, media_type, prompt, max_tokens=4000):
         return {"shows_product": True}
 
-    monkeypatch.setattr(llm, "DESCRIBE_MODEL", DEEPSEEK_VISION)
+    monkeypatch.setattr(describe, "DESCRIBE_MODEL", DEEPSEEK_VISION)
     monkeypatch.setattr(deepseek, "describe_json", fake)
 
     with pytest.raises(RuntimeError, match="no description"):

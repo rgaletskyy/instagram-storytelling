@@ -14,7 +14,7 @@ from typing import Any
 
 import httpx
 
-from .config import DEEPSEEK_BASE_URL, DEEPSEEK_KEY_ENV, load_dotenv
+from ..config import DEEPSEEK_BASE_URL, DEEPSEEK_KEY_ENV, load_dotenv
 
 # Describing a photograph is a single long call, not a chat turn; the default
 # five seconds times out on a large image.

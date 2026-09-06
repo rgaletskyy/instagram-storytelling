@@ -272,7 +272,7 @@ async def describe(image: Path, model: str = DESCRIBE_MODEL) -> ImageFacts:
     built on whichever vision model is configured.
     """
     if model.startswith(DEEPSEEK_MODEL_PREFIX):
-        from .deepseek import describe_json
+        from .llm.deepseek import describe_json
 
         data, media_type = llm._api_ready(image)
         payload = await describe_json(
