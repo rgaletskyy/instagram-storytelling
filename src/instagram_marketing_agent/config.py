@@ -205,6 +205,9 @@ REVIEW_MAX_TOKENS = 14000
 MIN_VIDEO_FRAMES = 4
 MAX_VIDEO_FRAMES = 7
 DEFAULT_VIDEO_FRAMES = MAX_VIDEO_FRAMES
+# Spacing to fall back on when a clip will not report its length, so a fixed
+# count can still be spread over something.
+DEFAULT_FRAME_INTERVAL = 5.0
 
 # Lifestyle sets: the brief asks for 6-8 frames per product, but a run defaults
 # to a smaller set because each frame is a separate generation.

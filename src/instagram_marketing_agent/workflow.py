@@ -16,6 +16,7 @@ from pathlib import Path
 
 from . import ffmpeg, llm, slide_html
 from .config import (
+    DEFAULT_FRAME_INTERVAL,
     DEFAULT_LIFESTYLE_IMAGES,
     DEFAULT_SLIDES,
     DEFAULT_VIDEO_FRAMES,
@@ -27,7 +28,9 @@ from .config import (
     LIFESTYLE_FORMAT,
     MAX_LIFESTYLE_IMAGES,
     MAX_SLIDES,
+    MAX_VIDEO_FRAMES,
     MIN_SLIDES,
+    MIN_VIDEO_FRAMES,
     OUTPUT_DIR,
     POST_FORMAT,
     PRODUCT_REFERENCE_LIMIT,
@@ -136,7 +139,12 @@ async def describe_video(
     saved there rather than thrown away.
     """
     with _video_workspace(video, artifacts_dir) as (work, keeping):
-        frames = await ffmpeg.extract_frames(video, work, frame_count)
+        # Spread the frames across the whole clip: a fixed spacing would sample
+        # only its opening seconds and never look at what follows.
+        count = max(MIN_VIDEO_FRAMES, min(frame_count, MAX_VIDEO_FRAMES))
+        seconds = ffmpeg.duration(video)
+        every = seconds / count if seconds > 0 else DEFAULT_FRAME_INTERVAL
+        frames = (await ffmpeg.extract_frames_every(video, work, every))[:count]
         frame_texts = await asyncio.gather(
             *(llm.describe_image(f) for f in frames), return_exceptions=True
         )

@@ -443,6 +443,73 @@ def test_wordless_slides_are_dropped_so_a_real_one_takes_their_place(stubbed, mo
     assert real is not None
 
 
+def test_a_clips_frames_are_spread_over_its_whole_length(monkeypatch, tmp_path):
+    """The count policy moved here when ffmpeg kept only interval sampling."""
+    from instagram_marketing_agent.config import MAX_VIDEO_FRAMES, MIN_VIDEO_FRAMES
+
+    asked_for = {}
+
+    async def fake_frames(video, out_dir, every_seconds):
+        asked_for["every"] = every_seconds
+        out_dir.mkdir(parents=True, exist_ok=True)
+        # More than the cap, as a real clip of this length would give.
+        frames = []
+        for i in range(1, 21):
+            frame = out_dir / f"frame_{i:03d}.jpg"
+            frame.write_bytes(b"jpeg")
+            frames.append(frame)
+        return frames
+
+    async def fake_audio(video, out_path):
+        return None
+
+    async def fake_describe(path):
+        return "a frame"
+
+    monkeypatch.setattr(workflow.ffmpeg, "duration", lambda video: 100.0)
+    monkeypatch.setattr(workflow.ffmpeg, "extract_frames_every", fake_frames)
+    monkeypatch.setattr(workflow.ffmpeg, "extract_audio", fake_audio)
+    monkeypatch.setattr(llm, "describe_image", fake_describe)
+
+    described = asyncio.run(
+        workflow.describe_video(tmp_path / "clip.mov", frame_count=MAX_VIDEO_FRAMES)
+    )
+
+    # 100 seconds over the frame cap, so the whole clip is covered.
+    assert asked_for["every"] == pytest.approx(100.0 / MAX_VIDEO_FRAMES)
+    assert described.description.count("Frame ") == MAX_VIDEO_FRAMES
+    assert MIN_VIDEO_FRAMES <= MAX_VIDEO_FRAMES
+
+
+def test_a_clip_that_will_not_report_its_length_still_samples(monkeypatch, tmp_path):
+    """Unknown duration falls back to a fixed spacing rather than nothing."""
+    from instagram_marketing_agent.config import DEFAULT_FRAME_INTERVAL
+
+    asked_for = {}
+
+    async def fake_frames(video, out_dir, every_seconds):
+        asked_for["every"] = every_seconds
+        out_dir.mkdir(parents=True, exist_ok=True)
+        frame = out_dir / "frame_001.jpg"
+        frame.write_bytes(b"jpeg")
+        return [frame]
+
+    async def fake_audio(video, out_path):
+        return None
+
+    async def fake_describe(path):
+        return "a frame"
+
+    monkeypatch.setattr(workflow.ffmpeg, "duration", lambda video: 0.0)
+    monkeypatch.setattr(workflow.ffmpeg, "extract_frames_every", fake_frames)
+    monkeypatch.setattr(workflow.ffmpeg, "extract_audio", fake_audio)
+    monkeypatch.setattr(llm, "describe_image", fake_describe)
+
+    asyncio.run(workflow.describe_video(tmp_path / "clip.mov"))
+
+    assert asked_for["every"] == DEFAULT_FRAME_INTERVAL
+
+
 def test_a_failed_transcription_does_not_sink_the_campaign(monkeypatch, tmp_path):
     """The clip still describes visually without its spoken content."""
     from instagram_marketing_agent import ffmpeg
@@ -450,9 +517,9 @@ def test_a_failed_transcription_does_not_sink_the_campaign(monkeypatch, tmp_path
     video = tmp_path / "clip.mov"
     video.write_bytes(b"mov")
 
-    async def fake_frames(v, out_dir, count=8):
+    async def fake_frames(v, out_dir, every_seconds=5.0):
         out_dir.mkdir(parents=True, exist_ok=True)
-        frame = out_dir / "frame_01.jpg"
+        frame = out_dir / "frame_001.jpg"
         frame.write_bytes(b"jpeg")
         return [frame]
 
@@ -467,7 +534,7 @@ def test_a_failed_transcription_does_not_sink_the_campaign(monkeypatch, tmp_path
     async def exploding_transcribe(_audio):
         raise RuntimeError("429 RESOURCE_EXHAUSTED")
 
-    monkeypatch.setattr(ffmpeg, "extract_frames", fake_frames)
+    monkeypatch.setattr(ffmpeg, "extract_frames_every", fake_frames)
     monkeypatch.setattr(ffmpeg, "extract_audio", fake_audio)
     monkeypatch.setattr(llm, "describe_image", fake_describe)
     monkeypatch.setattr(llm, "transcribe_audio", exploding_transcribe)
@@ -514,11 +581,11 @@ class TestVideoArtifacts:
     def _stub(monkeypatch, transcript="привіт зі студії"):
         from instagram_marketing_agent import ffmpeg
 
-        async def fake_frames(video, out_dir, count=8):
+        async def fake_frames(video, out_dir, every_seconds=5.0):
             out_dir.mkdir(parents=True, exist_ok=True)
             made = []
             for i in range(1, 4):
-                frame = out_dir / f"frame_{i:02d}.jpg"
+                frame = out_dir / f"frame_{i:03d}.jpg"
                 frame.write_bytes(b"jpeg")
                 made.append(frame)
             return made
@@ -534,7 +601,7 @@ class TestVideoArtifacts:
         async def fake_transcribe(audio):
             return transcript
 
-        monkeypatch.setattr(ffmpeg, "extract_frames", fake_frames)
+        monkeypatch.setattr(ffmpeg, "extract_frames_every", fake_frames)
         monkeypatch.setattr(ffmpeg, "extract_audio", fake_audio)
         monkeypatch.setattr(llm, "describe_image", fake_describe)
         monkeypatch.setattr(llm, "transcribe_audio", fake_transcribe)
@@ -549,9 +616,9 @@ class TestVideoArtifacts:
 
         kept = artifacts / "clip"
         assert sorted(p.name for p in kept.glob("frame_*.jpg")) == [
-            "frame_01.jpg",
-            "frame_02.jpg",
-            "frame_03.jpg",
+            "frame_001.jpg",
+            "frame_002.jpg",
+            "frame_003.jpg",
         ]
         assert (kept / "transcript.txt").read_text(encoding="utf-8") == (
             "привіт зі студії"

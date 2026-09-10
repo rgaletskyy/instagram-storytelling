@@ -14,7 +14,6 @@ import argparse
 import asyncio
 import contextlib
 import logging
-import re
 import sys
 import tempfile
 from dataclasses import dataclass
@@ -24,13 +23,14 @@ import httpx
 from openpyxl import Workbook, load_workbook
 from pydantic import BaseModel, Field
 
-from . import llm
+from . import drive, ffmpeg, llm
 from .config import (
     CLAUDE_DESCRIBE_MODEL,
     DEEPSEEK_MODEL_PREFIX,
     DESCRIBE_MODEL,
     IMAGE_SUFFIXES,
     RESOURCES_DIR,
+    VIDEO_SUFFIXES,
 )
 
 logger = logging.getLogger(__name__)
@@ -42,30 +42,42 @@ OUTPUT_FILE = INDEX_DIR / "images_index.xlsx"
 INVENTORY_SHEET = "Повний список"
 INDEX_SHEET = "Індекс"
 
-# The columns of index_pilot.xlsx, in its order. The first five and the last are
-# carried over from the inventory; the seven in between are what the model adds.
+# index_pilot.xlsx's columns, less 'Локальний шлях' -- a G:\ path on one
+# machine is no use to anyone reading the index -- plus what a video needs.
+# 'Тип' says which kind of file this row is; the pilot's own 'Тип', holding
+# лайфстайл/продуктове/креатив, is 'Категорія' here so the two do not collide.
 COLUMNS = (
     "#",
     "Файл",
     "Папка",
-    "Локальний шлях",
+    "Тип",
     "Google Drive",
     "Опис",
     "Продукт",
     "Бренд",
     "Порода",
     "Теги",
-    "Тип",
+    "Категорія",
     "Текст на фото",
     "Розмір, KB",
+    "Screenshots",
+    "AudioTranscribe",
 )
 # What the pilot writes in a field that does not apply.
 EMPTY = "—"
 LINK_LABEL = "Відкрити"
 
-# Rows the inventory marks as images; the rest are video and stray files.
+# What the inventory calls each kind of file, and what the index does.
 IMAGE_KIND = "зображення"
+VIDEO_KIND = "відео"
+IMG = "img"
+VIDEO = "video"
 RECOMMENDED = "так"
+
+# How often to take a screenshot, by how long the clip runs. Past the last
+# threshold a clip is transcribed but not sampled: the frames would run into the
+# dozens and say the same thing.
+SCREENSHOT_EVERY = ((60.0, 5.0), (120.0, 8.0))
 
 # Images in flight at once. Each one is a download plus a vision call, and the
 # library runs to thousands of files, so the ceiling is about not opening three
@@ -78,9 +90,6 @@ DESCRIBE_MAX_TOKENS = 6000
 # goes means an interrupted one keeps what it had already described. A save is
 # a barrier, so a chunk never holds fewer images than may run at once.
 BATCH = 10
-
-_DRIVE_ID = re.compile(r"/file/d/([\w-]+)|[?&]id=([\w-]+)")
-
 
 class ImageFacts(BaseModel):
     """What the model reads off one photograph, one field per index column."""
@@ -95,6 +104,15 @@ class ImageFacts(BaseModel):
 
 
 @dataclass(frozen=True)
+class IndexedItem:
+    """Everything written about one file, whatever kind it is."""
+
+    facts: ImageFacts
+    screenshots_url: str = ""
+    transcript: str = ""
+
+
+@dataclass(frozen=True)
 class InventoryRow:
     """One file as the inventory lists it."""
 
@@ -102,9 +120,13 @@ class InventoryRow:
     file: str
     folder: str
     path: str
-    local_url: str
+    kind: str
     drive_url: str
     size_kb: float | None
+
+    @property
+    def is_video(self) -> bool:
+        return self.kind == VIDEO
 
     @property
     def key(self) -> str:
@@ -141,8 +163,8 @@ def read_inventory(
 
     rows: list[InventoryRow] = []
     for number in range(2, sheet.max_row + 1):
-        kind = sheet.cell(row=number, column=5).value
-        if kind != IMAGE_KIND:
+        listed = sheet.cell(row=number, column=5).value
+        if listed not in (IMAGE_KIND, VIDEO_KIND):
             continue
         if only_recommended and sheet.cell(row=number, column=10).value != RECOMMENDED:
             continue
@@ -151,10 +173,12 @@ def read_inventory(
             continue
 
         name = str(sheet.cell(row=number, column=4).value or "")
-        if Path(name).suffix.lower() not in IMAGE_SUFFIXES:
-            # The inventory calls it an image; the extension says otherwise, and
-            # the vision API goes by what the bytes actually are.
-            logger.warning("skipping %s: not an image extension", name)
+        kind = IMG if listed == IMAGE_KIND else VIDEO
+        wanted = IMAGE_SUFFIXES if kind == IMG else VIDEO_SUFFIXES
+        if Path(name).suffix.lower() not in wanted:
+            # The inventory calls it one thing; the extension says otherwise,
+            # and ffmpeg and the vision API go by what the bytes actually are.
+            logger.warning("skipping %s: not a %s extension", name, kind)
             continue
 
         size = sheet.cell(row=number, column=6).value
@@ -164,43 +188,13 @@ def read_inventory(
                 file=name,
                 folder=top_folder,
                 path=str(sheet.cell(row=number, column=3).value or ""),
-                local_url=_cell_link(sheet.cell(row=number, column=8)),
+                kind=kind,
                 drive_url=_cell_link(sheet.cell(row=number, column=9)),
                 size_kb=float(size) if size not in (None, "") else None,
             )
         )
     workbook.close()
     return rows
-
-
-def drive_file_id(url: str) -> str:
-    """The file id out of a Drive link, in either shape it comes in."""
-    found = _DRIVE_ID.search(url or "")
-    if not found:
-        raise ValueError(f"no Drive file id in {url!r}")
-    return found.group(1) or found.group(2)
-
-
-async def download(client: httpx.AsyncClient, drive_url: str) -> bytes:
-    """Fetch one public Drive file.
-
-    Goes straight to the download host with `confirm=t`: the /uc endpoint
-    answers a large file with an HTML interstitial instead of the bytes, and
-    photographs off a phone are big enough to hit it.
-    """
-    file_id = drive_file_id(drive_url)
-    response = await client.get(
-        "https://drive.usercontent.google.com/download",
-        params={"id": file_id, "export": "download", "confirm": "t"},
-        follow_redirects=True,
-    )
-    response.raise_for_status()
-    if response.headers.get("content-type", "").startswith("text/html"):
-        raise RuntimeError(
-            f"Drive returned a web page rather than the file for {file_id} -- "
-            f"it is probably not shared publicly"
-        )
-    return response.content
 
 
 def _instructions() -> str:
@@ -307,13 +301,108 @@ async def describe(image: Path, model: str = DESCRIBE_MODEL) -> ImageFacts:
     return facts
 
 
-def _row_values(row: InventoryRow, facts: ImageFacts) -> list:
-    """One indexed image, in the pilot's column order."""
+def screenshot_interval(seconds: float) -> float | None:
+    """How often to sample this clip, or None when it is too long to sample."""
+    for limit, every in SCREENSHOT_EVERY:
+        if seconds <= limit:
+            return every
+    return None
+
+
+def merge_facts(per_frame: list[ImageFacts]) -> ImageFacts:
+    """One entry for a clip, compiled from the frames sampled out of it.
+
+    The descriptions are kept whole and numbered rather than summarised: the
+    point of sampling a clip is that different things happen in it, and a
+    précis is exactly what a later step matching a brief cannot use.
+    """
+    numbered = [
+        f"Кадр {i}: {facts.description.strip()}"
+        for i, facts in enumerate(per_frame, 1)
+        if facts.description.strip()
+    ]
+
+    def first(field: str) -> str:
+        return next(
+            (getattr(f, field).strip() for f in per_frame if getattr(f, field).strip()),
+            "",
+        )
+
+    tags: list[str] = []
+    for facts in per_frame:
+        for tag in facts.tags:
+            if tag.strip() and tag.strip() not in tags:
+                tags.append(tag.strip())
+
+    kinds = [f.kind.strip() for f in per_frame if f.kind.strip()]
+    texts: list[str] = []
+    for facts in per_frame:
+        text = facts.text_in_image.strip()
+        if text and text not in texts:
+            texts.append(text)
+
+    return ImageFacts(
+        description="\n".join(numbered),
+        product=first("product"),
+        brand=first("brand"),
+        breed=first("breed"),
+        tags=tags,
+        kind=max(set(kinds), key=kinds.count) if kinds else "",
+        text_in_image="; ".join(texts),
+    )
+
+
+async def index_video(
+    client: httpx.AsyncClient, video: Path, name: str, model: str, drive_url: str = ""
+) -> IndexedItem:
+    """Sample a clip, describe every frame, transcribe what is said.
+
+    The screenshots go to a Drive folder named after the clip and created beside
+    it, and the index keeps the link: a frame is worth looking at when a
+    description reads promisingly, and it cannot live in a spreadsheet cell.
+    """
+    with tempfile.TemporaryDirectory() as work:
+        workspace = Path(work)
+        seconds = ffmpeg.duration(video)
+        every = screenshot_interval(seconds)
+
+        facts = ImageFacts()
+        link = ""
+        if every is None:
+            logger.info(
+                "%s runs %.0fs, past the sampling limit -- transcript only", name, seconds
+            )
+        else:
+            frames = await ffmpeg.extract_frames_every(video, workspace, every)
+            if frames:
+                described = await asyncio.gather(
+                    *(describe(frame, model) for frame in frames)
+                )
+                facts = merge_facts(list(described))
+                beside = await drive.parent_of(client, drive_url)
+                folder, link = await drive.public_folder(client, Path(name).stem, beside)
+                for frame in frames:
+                    await drive.upload(client, frame, folder)
+
+        transcript = ""
+        audio = await ffmpeg.extract_audio(video, workspace / "audio.wav")
+        if audio:
+            try:
+                transcript = await llm.transcribe_audio(audio)
+            except Exception as exc:  # noqa: BLE001 - a clip still indexes silently
+                logger.warning("could not transcribe %s: %s", name, exc)
+
+    return IndexedItem(facts=facts, screenshots_url=link, transcript=transcript)
+
+
+def _row_values(row: InventoryRow, item: IndexedItem) -> list:
+    """One indexed file, in COLUMNS order."""
+    facts = item.facts
     return [
         row.number,
         row.file,
         row.folder,
-        LINK_LABEL if row.local_url else EMPTY,
+        row.kind,
         LINK_LABEL if row.drive_url else EMPTY,
         facts.description.strip() or EMPTY,
         facts.product.strip() or EMPTY,
@@ -323,6 +412,8 @@ def _row_values(row: InventoryRow, facts: ImageFacts) -> list:
         facts.kind.strip() or EMPTY,
         facts.text_in_image.strip() or EMPTY,
         row.size_kb if row.size_kb is not None else EMPTY,
+        LINK_LABEL if item.screenshots_url else EMPTY,
+        item.transcript.strip() or EMPTY,
     ]
 
 
@@ -373,12 +464,16 @@ def open_index(out: Path) -> tuple[Workbook, set[str]]:
     return workbook, set()
 
 
-def append_row(workbook: Workbook, row: InventoryRow, facts: ImageFacts) -> None:
-    """Write one image, keeping the two link columns clickable."""
+def append_row(workbook: Workbook, row: InventoryRow, item: IndexedItem) -> None:
+    """Write one file, keeping the link columns clickable."""
     sheet = workbook[INDEX_SHEET]
-    sheet.append(_row_values(row, facts))
+    sheet.append(_row_values(row, item))
     written = sheet.max_row
-    for column, url in ((4, row.local_url), (5, row.drive_url)):
+    links = {
+        COLUMNS.index("Google Drive") + 1: row.drive_url,
+        COLUMNS.index("Screenshots") + 1: item.screenshots_url,
+    }
+    for column, url in links.items():
         if url:
             sheet.cell(row=written, column=column).hyperlink = url
             sheet.cell(row=written, column=column).style = "Hyperlink"
@@ -386,16 +481,18 @@ def append_row(workbook: Workbook, row: InventoryRow, facts: ImageFacts) -> None
 
 async def _index_one(
     client: httpx.AsyncClient, row: InventoryRow, model: str
-) -> ImageFacts:
-    """Download one image and describe it, cleaning up after itself."""
-    data = await download(client, row.drive_url)
-    suffix = Path(row.file).suffix or ".jpg"
+) -> IndexedItem:
+    """Download one file and read it, cleaning up after itself."""
+    data = await drive.download(client, row.drive_url)
+    suffix = Path(row.file).suffix or (".mp4" if row.is_video else ".jpg")
     handle, name = tempfile.mkstemp(suffix=suffix)
     local = Path(name)
     try:
         with open(handle, "wb") as f:
             f.write(data)
-        return await describe(local, model)
+        if row.is_video:
+            return await index_video(client, local, row.file, model, row.drive_url)
+        return IndexedItem(facts=await describe(local, model))
     finally:
         local.unlink(missing_ok=True)
 
@@ -492,9 +589,10 @@ async def build_index(
         async with gate:
             return await _index_one(client, row, model)
 
-    # Long enough for a large photograph on a slow link, bounded so a stalled
-    # download cannot hold up a run over thousands of files.
-    timeout = httpx.Timeout(180.0, connect=15.0)
+    # Long enough for a video on a slow link -- the library holds clips of tens
+    # of megabytes -- bounded so a stalled download cannot hold up a run over
+    # thousands of files.
+    timeout = httpx.Timeout(600.0, connect=15.0)
     async with httpx.AsyncClient(timeout=timeout) as client:
         # Saving between chunks would otherwise throttle a parallelism set
         # higher than the save cadence.

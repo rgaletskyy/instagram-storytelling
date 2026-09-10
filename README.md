@@ -36,7 +36,7 @@ A campaign keeps what it read from a video, under `<project>/source/<clip>/`:
 
 ```
 source/IMG_1923/
-  frame_01.jpg … frame_08.jpg   the sampled frames
+  frame_001.jpg … frame_007.jpg  the sampled frames
   transcript.txt                 what was said
   frames.md                      the per-frame descriptions
 ```
@@ -217,12 +217,33 @@ indexed. **Six of the eleven top-level folders carry no such mark at all** —
 already done.
 
 It reads `src/resources/images_index/index_inventory.xlsx` (sheet
-`Повний список`), downloads each image by the **Google Drive link held on the
-cell** -- the cell text is only ever the word "Відкрити" -- describes it, and
-writes `images_index.xlsx` in the shape of `index_pilot.xlsx`: the same
-thirteen columns, in Ukrainian, with `—` in a field that does not apply. Only
-rows the inventory types as `зображення` are read; video and stray files are
-skipped.
+`Повний список`), downloads each file by the **Google Drive link held on the
+cell** -- the cell text is only ever the word "Відкрити" -- reads it, and writes
+`images_index.xlsx`, in Ukrainian, with `—` in a field that does not apply.
+Rows typed `зображення` and `відео` are both indexed; stray files are skipped.
+
+The columns follow `index_pilot.xlsx` with three differences: `Локальний шлях`
+is dropped (a `G:\` path is no use to anyone but the machine that wrote it),
+`Тип` says `img` or `video`, and the pilot's own `Тип` -- лайфстайл, продуктове,
+креатив -- is `Категорія` so the two do not collide. `Screenshots` and
+`AudioTranscribe` are added for video.
+
+**A video is sampled, uploaded and transcribed.** Screenshots are taken every 5
+seconds for a clip under a minute and every 8 seconds from one to two minutes;
+past two minutes none are taken, because the frames run into dozens and repeat
+themselves. They are uploaded to a Drive folder named after the clip and
+created **beside it**, in the clip's own folder, whose link goes in
+`Screenshots`; each is described and compiled -- numbered, kept whole -- into
+`Опис`. The audio is extracted and transcribed into
+`AudioTranscribe`; a clip too long to sample still gets its words.
+
+Video therefore needs two things images do not: **ffmpeg**, and **write access
+to Drive**. The public links in the inventory are read-only, so uploading needs
+`GOOGLE_OAUTH_CLIENT_ID`, `GOOGLE_OAUTH_CLIENT_SECRET` and
+`GOOGLE_OAUTH_REFRESH_TOKEN` in `.env` (see `.env.example`), granted the full
+`drive` scope -- `drive.file` only reaches files the app itself created, and the
+screenshot folder goes next to a video it did not. Without them a video row
+fails with that message and is retried next run, while images carry on.
 
 The description is written for a machine, not a browser: a later step matches a
 brief against it to pick images automatically, so whatever it leaves out is

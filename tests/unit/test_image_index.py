@@ -7,7 +7,8 @@ import pytest
 from openpyxl import Workbook, load_workbook
 from PIL import Image
 
-from instagram_marketing_agent import image_index
+from instagram_marketing_agent import drive, image_index
+from instagram_marketing_agent.drive import file_id
 from instagram_marketing_agent.image_index import (
     COLUMNS,
     EMPTY,
@@ -15,13 +16,21 @@ from instagram_marketing_agent.image_index import (
     INVENTORY_SHEET,
     PARALLELISM,
     ImageFacts,
-    drive_file_id,
     read_inventory,
 )
 
 pytestmark = pytest.mark.unit
 
 DRIVE = "https://drive.google.com/file/d/{}/view?usp=drivesdk"
+
+
+def _jpeg(path, size=(32, 32)):
+    """A real JPEG on disk, small enough to be free."""
+    buffer = io.BytesIO()
+    Image.new("RGB", size, "red").save(buffer, "JPEG")
+    path.write_bytes(buffer.getvalue())
+    return path
+
 
 
 def _inventory(tmp_path, rows):
@@ -33,13 +42,13 @@ def _inventory(tmp_path, rows):
         ["#", "Папка (верхній рівень)", "Шлях", "Файл", "Тип", "Розмір, KB",
          "Дата зміни", "Локальний файл", "Google Drive", "Рекомендовано (пілот)"]
     )
-    for number, (folder, name, kind, recommended, file_id) in enumerate(rows, 1):
+    for number, (folder, name, kind, recommended, drive_id) in enumerate(rows, 1):
         sheet.append(
             [number, folder, f"{folder}/{name}", name, kind, 100.5, "2024-06-11",
              "Відкрити", "Відкрити", recommended]
         )
         sheet.cell(row=number + 1, column=8).hyperlink = f"file:///G:/{folder}/{name}"
-        sheet.cell(row=number + 1, column=9).hyperlink = DRIVE.format(file_id)
+        sheet.cell(row=number + 1, column=9).hyperlink = DRIVE.format(drive_id)
 
     tmp_path.mkdir(parents=True, exist_ok=True)
     path = tmp_path / "index_inventory.xlsx"
@@ -67,7 +76,7 @@ def indexed(monkeypatch):
             kind="лайфстайл",
         )
 
-    monkeypatch.setattr(image_index, "download", fake_download)
+    monkeypatch.setattr(drive, "download", fake_download)
     monkeypatch.setattr(image_index, "describe", fake_describe)
     return seen
 
@@ -81,15 +90,15 @@ def indexed(monkeypatch):
     ],
 )
 def test_the_file_id_is_read_out_of_either_link_shape(url, expected):
-    assert drive_file_id(url) == expected
+    assert file_id(url) == expected
 
 
 def test_a_link_with_no_id_is_refused():
     with pytest.raises(ValueError, match="no Drive file id"):
-        drive_file_id("https://example.com/photo.jpg")
+        file_id("https://example.com/photo.jpg")
 
 
-def test_only_recommended_images_are_read_by_default(tmp_path):
+def test_only_recommended_files_are_read_by_default(tmp_path):
     inventory = _inventory(
         tmp_path,
         [
@@ -99,25 +108,30 @@ def test_only_recommended_images_are_read_by_default(tmp_path):
         ],
     )
 
-    assert [r.file for r in read_inventory(inventory)] == ["a.jpg"]
+    assert [r.file for r in read_inventory(inventory)] == ["a.jpg", "clip.mp4"]
     assert [r.file for r in read_inventory(inventory, only_recommended=False)] == [
         "a.jpg",
         "b.jpg",
+        "clip.mp4",
     ]
 
 
-def test_video_and_stray_files_are_never_read(tmp_path):
+def test_video_is_read_and_stray_files_are_not(tmp_path):
     """The inventory's own type column, and the extension, both have to agree."""
     inventory = _inventory(
         tmp_path,
         [
             ("B2B", "clip.mp4", "відео", "так", "id_a"),
             ("B2B", "notes.pdf", "зображення", "так", "id_b"),
-            ("B2B", "photo.HEIC", "зображення", "так", "id_c"),
+            ("B2B", "sheet.xlsx", "інше", "так", "id_c"),
+            ("B2B", "photo.HEIC", "зображення", "так", "id_d"),
         ],
     )
 
-    assert [r.file for r in read_inventory(inventory)] == ["photo.HEIC"]
+    rows = read_inventory(inventory)
+
+    assert [(r.file, r.kind) for r in rows] == [("clip.mp4", "video"), ("photo.HEIC", "img")]
+    assert rows[0].is_video and not rows[1].is_video
 
 
 def test_a_folder_can_be_picked_out(tmp_path):
@@ -145,14 +159,209 @@ async def test_the_index_is_written_in_the_pilot_shape(tmp_path, indexed):
     assert (count, failures) == (1, [])
     sheet = load_workbook(out)[INDEX_SHEET]
     assert [c.value for c in sheet[1]] == list(COLUMNS)
-    written = [c.value for c in sheet[2]]
-    assert written[1:3] == ["a.jpg", "Grooming"]
-    assert written[5] == "Рудий пес на дивані"
+    written = dict(zip(COLUMNS, (c.value for c in sheet[2]), strict=True))
+    assert written["Файл"] == "a.jpg"
+    assert written["Папка"] == "Grooming"
+    assert written["Тип"] == "img"
+    assert written["Опис"] == "Рудий пес на дивані"
     # Absent fields carry the pilot's dash rather than an empty cell.
-    assert written[6] == EMPTY and written[7] == EMPTY
-    assert written[9] == "собака, такса, лайфстайл"
-    # The link columns stay clickable, as they are in the inventory.
-    assert sheet.cell(row=2, column=5).hyperlink.target == DRIVE.format("id_a")
+    assert written["Продукт"] == EMPTY and written["Бренд"] == EMPTY
+    assert written["Теги"] == "собака, такса, лайфстайл"
+    assert written["Категорія"] == "лайфстайл"
+    # An image has neither of the video columns.
+    assert written["Screenshots"] == EMPTY and written["AudioTranscribe"] == EMPTY
+    # The link column stays clickable, as it is in the inventory.
+    drive_column = COLUMNS.index("Google Drive") + 1
+    assert sheet.cell(row=2, column=drive_column).hyperlink.target == DRIVE.format("id_a")
+
+
+@pytest.mark.parametrize(
+    "seconds,every",
+    [(1.0, 5.0), (59.9, 5.0), (60.0, 5.0), (60.1, 8.0), (120.0, 8.0), (120.1, None),
+     (600.0, None)],
+)
+def test_how_often_a_clip_is_sampled(seconds, every):
+    """Every 5s under a minute, every 8s to two, and past that not at all."""
+    assert image_index.screenshot_interval(seconds) == every
+
+
+def test_frames_are_compiled_into_one_entry():
+    """Kept whole and numbered: a clip is sampled because it changes."""
+    merged = image_index.merge_facts(
+        [
+            ImageFacts(description="пес біжить", tags=["собака", "рух"], kind="лайфстайл"),
+            ImageFacts(
+                description="банка на столі",
+                product="Calming",
+                brand="Natural Dog Company",
+                tags=["товар", "собака"],
+                kind="продуктове",
+                text_in_image="Calming",
+            ),
+            ImageFacts(description="пес спить", breed="мопс", tags=["сон"], kind="лайфстайл"),
+        ]
+    )
+
+    assert merged.description == (
+        "Кадр 1: пес біжить\nКадр 2: банка на столі\nКадр 3: пес спить"
+    )
+    # First answer wins for a single-valued field; tags are the union, in order.
+    assert (merged.product, merged.brand, merged.breed) == (
+        "Calming",
+        "Natural Dog Company",
+        "мопс",
+    )
+    assert merged.tags == ["собака", "рух", "товар", "сон"]
+    assert merged.kind == "лайфстайл"
+    assert merged.text_in_image == "Calming"
+
+
+def test_compiling_nothing_is_not_an_error():
+    """A clip whose frames all failed still gets a row, with empty fields."""
+    assert image_index.merge_facts([]).description == ""
+
+
+@pytest.fixture
+def clip(monkeypatch, tmp_path):
+    """Stand in for ffmpeg, Drive's upload half and the transcriber."""
+    seen = {
+        "interval": None,
+        "folder": None,
+        "parent": None,
+        "asked_where": None,
+        "uploaded": [],
+        "described": 0,
+    }
+
+    async def fake_frames(video, out_dir, every_seconds):
+        seen["interval"] = every_seconds
+        out_dir.mkdir(parents=True, exist_ok=True)
+        frames = []
+        for i in (1, 2):
+            frame = out_dir / f"frame_{i:03d}.jpg"
+            _jpeg(frame)
+            frames.append(frame)
+        return frames
+
+    async def fake_audio(video, out_path):
+        out_path.write_bytes(b"wav")
+        return out_path
+
+    async def fake_transcribe(audio):
+        return "привіт, це тест"
+
+    async def fake_parent(client, url_or_id):
+        seen["asked_where"] = url_or_id
+        return "the-clips-own-folder"
+
+    async def fake_folder(client, name, parent):
+        seen["folder"] = name
+        seen["parent"] = parent
+        return "folder-id", drive.folder_link("folder-id")
+
+    async def fake_upload(client, path, parent_id):
+        seen["uploaded"].append((path.name, parent_id))
+        return "file-id"
+
+    async def fake_describe(image, model=None):
+        seen["described"] += 1
+        return ImageFacts(description=f"кадр {image.name}", tags=["собака"])
+
+    monkeypatch.setattr(image_index.ffmpeg, "duration", lambda video: 30.0)
+    monkeypatch.setattr(image_index.ffmpeg, "extract_frames_every", fake_frames)
+    monkeypatch.setattr(image_index.ffmpeg, "extract_audio", fake_audio)
+    monkeypatch.setattr(image_index.llm, "transcribe_audio", fake_transcribe)
+    monkeypatch.setattr(drive, "parent_of", fake_parent)
+    monkeypatch.setattr(drive, "public_folder", fake_folder)
+    monkeypatch.setattr(drive, "upload", fake_upload)
+    monkeypatch.setattr(image_index, "describe", fake_describe)
+    return seen
+
+
+async def test_a_clip_is_sampled_uploaded_and_transcribed(tmp_path, clip):
+    item = await image_index.index_video(
+        None, tmp_path / "IMG_1.MOV", "IMG_1.MOV", "m", DRIVE.format("id_v")
+    )
+
+    assert clip["interval"] == 5.0
+    # The folder is named for the clip and created beside it, not somewhere
+    # configured: the library keeps its own shape.
+    assert clip["asked_where"] == DRIVE.format("id_v")
+    assert clip["parent"] == "the-clips-own-folder"
+    assert clip["folder"] == "IMG_1"
+    assert [name for name, _ in clip["uploaded"]] == [
+        "frame_001.jpg",
+        "frame_002.jpg",
+    ]
+    assert all(parent == "folder-id" for _, parent in clip["uploaded"])
+    assert item.screenshots_url == drive.folder_link("folder-id")
+    assert item.transcript == "привіт, це тест"
+    assert item.facts.description.startswith("Кадр 1: кадр frame_001.jpg")
+
+
+async def test_a_long_clip_is_transcribed_but_not_sampled(tmp_path, clip, monkeypatch):
+    """Past two minutes the frames run into dozens and say the same thing."""
+    monkeypatch.setattr(image_index.ffmpeg, "duration", lambda video: 300.0)
+
+    item = await image_index.index_video(None, tmp_path / "long.mp4", "long.mp4", "m")
+
+    assert clip["interval"] is None
+    assert clip["uploaded"] == []
+    assert item.screenshots_url == ""
+    assert item.facts.description == ""
+    # The words are still worth having.
+    assert item.transcript == "привіт, це тест"
+
+
+async def test_a_clip_with_no_audio_still_indexes(tmp_path, clip, monkeypatch):
+    async def no_audio(video, out_path):
+        return None
+
+    monkeypatch.setattr(image_index.ffmpeg, "extract_audio", no_audio)
+
+    item = await image_index.index_video(None, tmp_path / "silent.mp4", "silent.mp4", "m")
+
+    assert item.transcript == ""
+    assert item.facts.description != ""
+
+
+async def test_a_transcription_failure_does_not_lose_the_frames(tmp_path, clip, monkeypatch):
+    async def boom(audio):
+        raise RuntimeError("gemini is down")
+
+    monkeypatch.setattr(image_index.llm, "transcribe_audio", boom)
+
+    item = await image_index.index_video(None, tmp_path / "IMG_2.MOV", "IMG_2.MOV", "m")
+
+    assert item.transcript == ""
+    assert item.screenshots_url == drive.folder_link("folder-id")
+
+
+async def test_a_video_row_is_written_with_its_screenshots_and_transcript(
+    tmp_path, clip, monkeypatch
+):
+    inventory = _inventory(
+        tmp_path, [("UGC", "IMG_1.MOV", "відео", "так", "id_v")]
+    )
+    out = tmp_path / "images_index.xlsx"
+
+    async def fake_download(client, url):
+        return b"not really a video"
+
+    monkeypatch.setattr(drive, "download", fake_download)
+
+    count, failures = await image_index.build_index(inventory, out)
+
+    assert (count, failures) == (1, [])
+    sheet = load_workbook(out)[INDEX_SHEET]
+    written = dict(zip(COLUMNS, (c.value for c in sheet[2]), strict=True))
+    assert written["Тип"] == "video"
+    assert written["AudioTranscribe"] == "привіт, це тест"
+    assert written["Screenshots"] == "Відкрити"
+    column = COLUMNS.index("Screenshots") + 1
+    assert sheet.cell(row=2, column=column).hyperlink.target == drive.folder_link(
+        "folder-id"
+    )
 
 
 async def test_a_name_already_in_the_index_is_skipped_whatever_its_folder(
@@ -268,7 +477,7 @@ async def test_no_more_than_the_parallelism_are_in_flight(tmp_path, monkeypatch)
     async def fake_describe(image, model=None):
         return ImageFacts(description="опис")
 
-    monkeypatch.setattr(image_index, "download", slow_download)
+    monkeypatch.setattr(drive, "download", slow_download)
     monkeypatch.setattr(image_index, "describe", fake_describe)
 
     count, _ = await image_index.build_index(
@@ -303,7 +512,7 @@ async def test_a_parallelism_above_the_save_cadence_is_not_throttled(
     async def fake_describe(image, model=None):
         return ImageFacts(description="опис")
 
-    monkeypatch.setattr(image_index, "download", slow_download)
+    monkeypatch.setattr(drive, "download", slow_download)
     monkeypatch.setattr(image_index, "describe", fake_describe)
 
     await image_index.build_index(inventory, tmp_path / "out.xlsx", parallelism=16)
@@ -380,7 +589,7 @@ async def test_an_image_that_fails_is_reported_and_left_for_next_time(
         Image.new("RGB", (64, 64), "red").save(buffer, "JPEG")
         return buffer.getvalue()
 
-    monkeypatch.setattr(image_index, "download", half_broken)
+    monkeypatch.setattr(drive, "download", half_broken)
     count, failures = await image_index.build_index(inventory, out)
 
     assert count == 1
