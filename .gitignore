@@ -44,6 +44,9 @@ src/resources/products.xlsx
 # The image library's inventory and the index built from it: real Drive links
 # and internal folder paths, so they stay local like the catalogue does.
 src/resources/images_index/
+# Spreadsheets the RAG indexer reads: the catalogue, customer DMs and the
+# image index with its Drive links.
+src/resources/indices/
 
 # Campaign content: source photos and generated stories stay local.
 # Everything under content/ is ignored, so a new working folder cannot be

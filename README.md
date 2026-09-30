@@ -237,13 +237,68 @@ created **beside it**, in the clip's own folder, whose link goes in
 `Опис`. The audio is extracted and transcribed into
 `AudioTranscribe`; a clip too long to sample still gets its words.
 
-Video therefore needs two things images do not: **ffmpeg**, and **write access
-to Drive**. The public links in the inventory are read-only, so uploading needs
-`GOOGLE_OAUTH_CLIENT_ID`, `GOOGLE_OAUTH_CLIENT_SECRET` and
-`GOOGLE_OAUTH_REFRESH_TOKEN` in `.env` (see `.env.example`), granted the full
-`drive` scope -- `drive.file` only reaches files the app itself created, and the
-screenshot folder goes next to a video it did not. Without them a video row
-fails with that message and is retried next run, while images carry on.
+Video therefore needs two things images do not: **ffmpeg**, and **write access to
+Drive**. Without the credentials below, a video row fails with a message saying
+which setting is missing and is retried on the next run, while images carry on.
+
+### Setting up Drive access
+
+The inventory's links are public *reads*; uploading needs an OAuth client of
+your own. One-time setup, in the Google Cloud console:
+
+1. **Enable the Drive API** — *APIs & Services → Enable APIs → Google Drive API*.
+2. **Set the audience to Internal** — *Google Auth Platform → Audience*. This is
+   the step everything rests on. The `drive` scope is *restricted*, and for an
+   External app Google expires the refresh token every 7 days until the app is
+   verified, which would strand a run over 3 200 files midway. An Internal app
+   in a Workspace org is exempt from that, from verification, and from the
+   unverified-app warning. If the option is greyed out, the account is not in
+   the org.
+3. **Add the scope** — *Data access* → `https://www.googleapis.com/auth/drive`.
+   Not `drive.file`: that reaches only files this app created, and the
+   screenshot folder is created beside a video it did not.
+4. **Create a Desktop app client** — *Clients → Create client → Desktop app*.
+   Copy its id and secret into `.env` as `GOOGLE_OAUTH_CLIENT_ID` and
+   `GOOGLE_OAUTH_CLIENT_SECRET`. Desktop, because it accepts any loopback port
+   and so needs no redirect URI registered.
+5. **Mint the refresh token:**
+
+   ```bash
+   uv run authorize-drive
+   ```
+
+   It opens the consent screen, catches the redirect on a local port, and prints
+   the `GOOGLE_OAUTH_REFRESH_TOKEN=…` line to paste into `.env`. Consent as an
+   account that can write to the Shared Drive.
+
+   **"Access blocked: This app's request is invalid"** on that page means
+   `redirect_uri_mismatch` — the client is a *Web application*, which accepts
+   only the exact redirect URIs registered against it. Either make a Desktop
+   client as in step 4, or reuse the Web one by naming its registered URI:
+
+   ```bash
+   uv run authorize-drive --redirect-uri http://localhost:8765/callback
+   ```
+
+   The string has to match what is registered exactly, `localhost` and trailing
+   path included.
+6. **Check that account's access to the content** — on the Shared Drive holding
+   the library, it needs **Content manager**, not Contributor: it has to create
+   folders, not only add files.
+
+Then confirm it end to end on a single clip before running it for real:
+
+```bash
+uv run image-index --limit 1 --folder UGC --out /tmp/drive_smoke.xlsx
+```
+
+Expect `1 indexed, 0 failed`, a folder named after the clip sitting beside it in
+Drive, and a clickable `Screenshots` link in the sheet. Run the same command
+twice: the second run must reuse that folder rather than make another.
+
+If the org forbids link-sharing outside the domain, the folder is still created
+and linked -- the "anyone with the link" permission is logged as a warning and
+skipped, since anyone who can open the index can already open the drive.
 
 The description is written for a machine, not a browser: a later step matches a
 brief against it to pick images automatically, so whatever it leaves out is
@@ -276,6 +331,66 @@ API, rather than about speed.
 
 Descriptions follow `DESCRIBE_MODEL` like the rest of the app; `--model`
 overrides it for one run.
+
+## Product search (RAG)
+
+A third, separate piece: the catalogue, the Instagram DMs and the image index
+are embedded into the Firestore database `healthydoggo`, and `SearchService`
+finds what is close to a query. Specs: `specs/hd-marketing-rag.md`,
+`specs/search-service.md`. Code lives beside the app, not inside it:
+`src/infrastructure/` (Firestore, Jev, Gemini clients), `src/domain/`
+(`SearchService`, contracts), `src/routines/indexer.py`.
+
+Needs `GEMINI_API_KEY`, `TYPESAFE_API_KEY`, `GOOGLE_CLOUD_PROJECT`, and
+Application Default Credentials for Firestore
+(`gcloud auth application-default login`).
+
+**Vectors are 1536-dimensional**, not the model's native 3072: Firestore will
+not index a vector over 2048 dimensions. Each collection needs a vector index
+before it can be searched -- once per collection:
+
+```bash
+for c in products instagram_messages content; do
+  gcloud firestore indexes composite create --database=healthydoggo \
+    --collection-group=$c --query-scope=COLLECTION \
+    --field-config field-path=embeddingVector,vector-config='{"dimension":"1536","flat":"{}"}'
+done
+```
+
+Then index the spreadsheets in `src/resources/indices/`:
+
+```bash
+uv run rag-index --collection products --limit 20   # try it on a few rows
+uv run rag-index                                    # everything
+uv run rag-index --force                            # re-embed what is stored
+```
+
+Rows are embedded and written 200 at a time, with a 10-second pause between
+chunks. Runs are resumable -- a row whose id is already stored is skipped -- and ids
+are stable (SKU, Drive file id, a hash of conversation, sender and day).
+
+**Messages are stored a day at a time.** One sender's messages in one
+conversation on one day (Kyiv time) are joined, in the order sent, into a
+single document stamped with the first message's time. Grouping by
+conversation keeps the shop's replies to different customers apart. A day
+already stored is not updated when more of its messages turn up in a later
+export; `--force` rebuilds it.
+
+Two kinds of row are never embedded: Instagram's own notices and placeholders (`Liked a message`,
+`[Фото]` and the like), and image-index rows nobody has described yet.
+
+```python
+from domain.search_service import SearchService
+
+result = await SearchService().find_similar("шампунь для шпіца")
+result.products, result.instagram_messages, result.content  # top 5 each, closest first
+```
+
+Jev is asked a single choice question: the query is the state, and each
+collection is an option described in `COLLECTION_DESCRIPTIONS`. A collection is
+searched only when its probability is at least 0.3. The probabilities sum to 1,
+so a query that clearly belongs to one collection searches only that one, while
+one Jev is torn over can search two or all three.
 
 ## Product catalogue
 

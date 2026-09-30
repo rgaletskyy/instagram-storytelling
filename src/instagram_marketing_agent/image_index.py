@@ -16,6 +16,7 @@ import contextlib
 import logging
 import sys
 import tempfile
+import time
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -42,37 +43,42 @@ OUTPUT_FILE = INDEX_DIR / "images_index.xlsx"
 INVENTORY_SHEET = "Повний список"
 INDEX_SHEET = "Індекс"
 
-# index_pilot.xlsx's columns, less 'Локальний шлях' -- a G:\ path on one
-# machine is no use to anyone reading the index -- plus what a video needs.
-# 'Тип' says which kind of file this row is; the pilot's own 'Тип', holding
-# лайфстайл/продуктове/креатив, is 'Категорія' here so the two do not collide.
+# The order images_index.xlsx itself uses. 'Локальний шлях' is gone -- a G:\
+# path on one machine is no use to anyone reading the index -- and 'Тип' keeps
+# its meaning from index_pilot.xlsx: лайфстайл, продуктове, креатив. Whether a
+# row is a still or a clip is not a column; the filename and the inventory both
+# already say.
 COLUMNS = (
     "#",
     "Файл",
     "Папка",
-    "Тип",
     "Google Drive",
     "Опис",
+    "Screenshots",
+    "AudioTranscribe",
     "Продукт",
     "Бренд",
     "Порода",
     "Теги",
-    "Категорія",
+    "Тип",
     "Текст на фото",
     "Розмір, KB",
-    "Screenshots",
-    "AudioTranscribe",
 )
 # What the pilot writes in a field that does not apply.
 EMPTY = "—"
 LINK_LABEL = "Відкрити"
 
-# What the inventory calls each kind of file, and what the index does.
+# What the inventory calls each kind of file. The distinction routes a row to
+# ffmpeg or straight to the vision model; it is not written to the index.
 IMAGE_KIND = "зображення"
 VIDEO_KIND = "відео"
 IMG = "img"
 VIDEO = "video"
-RECOMMENDED = "так"
+
+# Where the inventory keeps what this reads. Positions, because the sheet has
+# no stable header row to key off in its first column.
+COL_NUMBER, COL_FOLDER, COL_PATH, COL_FILE = 1, 2, 3, 4
+COL_KIND, COL_SIZE, COL_DRIVE = 5, 6, 8
 
 # How often to take a screenshot, by how long the clip runs. Past the last
 # threshold a clip is transcribed but not sampled: the frames would run into the
@@ -146,10 +152,9 @@ def _cell_link(cell) -> str:
 
 def read_inventory(
     inventory: Path = INVENTORY_FILE,
-    only_recommended: bool = True,
     folder: str | None = None,
 ) -> list[InventoryRow]:
-    """The image rows of the inventory, in its own order."""
+    """The image and video rows of the inventory, in its own order."""
     if not inventory.exists():
         raise FileNotFoundError(f"no inventory at {inventory}")
 
@@ -162,17 +167,16 @@ def read_inventory(
     sheet = workbook[INVENTORY_SHEET]
 
     rows: list[InventoryRow] = []
+    unreachable = 0
     for number in range(2, sheet.max_row + 1):
-        listed = sheet.cell(row=number, column=5).value
+        listed = sheet.cell(row=number, column=COL_KIND).value
         if listed not in (IMAGE_KIND, VIDEO_KIND):
             continue
-        if only_recommended and sheet.cell(row=number, column=10).value != RECOMMENDED:
-            continue
-        top_folder = str(sheet.cell(row=number, column=2).value or "")
+        top_folder = str(sheet.cell(row=number, column=COL_FOLDER).value or "")
         if folder and folder.lower() not in top_folder.lower():
             continue
 
-        name = str(sheet.cell(row=number, column=4).value or "")
+        name = str(sheet.cell(row=number, column=COL_FILE).value or "")
         kind = IMG if listed == IMAGE_KIND else VIDEO
         wanted = IMAGE_SUFFIXES if kind == IMG else VIDEO_SUFFIXES
         if Path(name).suffix.lower() not in wanted:
@@ -181,19 +185,31 @@ def read_inventory(
             logger.warning("skipping %s: not a %s extension", name, kind)
             continue
 
-        size = sheet.cell(row=number, column=6).value
+        drive_url = _cell_link(sheet.cell(row=number, column=COL_DRIVE))
+        if not drive_url:
+            # Nothing to download. Counted rather than logged one by one --
+            # whole folders of the inventory carry no link.
+            unreachable += 1
+            continue
+
+        size = sheet.cell(row=number, column=COL_SIZE).value
         rows.append(
             InventoryRow(
-                number=int(sheet.cell(row=number, column=1).value or number - 1),
+                number=int(sheet.cell(row=number, column=COL_NUMBER).value or number - 1),
                 file=name,
                 folder=top_folder,
-                path=str(sheet.cell(row=number, column=3).value or ""),
+                path=str(sheet.cell(row=number, column=COL_PATH).value or ""),
                 kind=kind,
-                drive_url=_cell_link(sheet.cell(row=number, column=9)),
+                drive_url=drive_url,
                 size_kb=float(size) if size not in (None, "") else None,
             )
         )
     workbook.close()
+    if unreachable:
+        logger.warning(
+            "%d listed files have no Google Drive link and cannot be fetched",
+            unreachable,
+        )
     return rows
 
 
@@ -301,6 +317,26 @@ async def describe(image: Path, model: str = DESCRIBE_MODEL) -> ImageFacts:
     return facts
 
 
+def show_progress(quiet: bool = False) -> None:
+    """Send the running commentary to stderr.
+
+    A file at a time rather than a chunk at a time: a run holds clips of tens of
+    megabytes, and without this the terminal sits silent for minutes on end with
+    no way to tell work from a hang.
+    """
+    logging.basicConfig(
+        level=logging.WARNING if quiet else logging.INFO,
+        format="%(asctime)s  %(message)s",
+        datefmt="%H:%M:%S",
+        stream=sys.stderr,
+        force=True,
+    )
+    # httpx logs a line per request at INFO, which buries our own commentary
+    # under one entry per screenshot.
+    for chatty in ("httpx", "httpcore", "google_genai", "urllib3"):
+        logging.getLogger(chatty).setLevel(logging.WARNING)
+
+
 def screenshot_interval(seconds: float) -> float | None:
     """How often to sample this clip, or None when it is too long to sample."""
     for limit, every in SCREENSHOT_EVERY:
@@ -370,25 +406,38 @@ async def index_video(
         link = ""
         if every is None:
             logger.info(
-                "%s runs %.0fs, past the sampling limit -- transcript only", name, seconds
+                "%s: runs %.0fs, past the sampling limit -- transcript only",
+                name,
+                seconds,
             )
         else:
             frames = await ffmpeg.extract_frames_every(video, workspace, every)
+            logger.info(
+                "%s: %.0fs long, %d frames every %.0fs", name, seconds, len(frames), every
+            )
             if frames:
                 described = await asyncio.gather(
                     *(describe(frame, model) for frame in frames)
                 )
                 facts = merge_facts(list(described))
+                logger.info("%s: %d frames described", name, len(frames))
+
                 beside = await drive.parent_of(client, drive_url)
                 folder, link = await drive.public_folder(client, Path(name).stem, beside)
                 for frame in frames:
                     await drive.upload(client, frame, folder)
+                logger.info("%s: %d screenshots uploaded to %s", name, len(frames), link)
 
         transcript = ""
         audio = await ffmpeg.extract_audio(video, workspace / "audio.wav")
-        if audio:
+        if not audio:
+            logger.info("%s: no audio track", name)
+        else:
             try:
                 transcript = await llm.transcribe_audio(audio)
+                logger.info(
+                    "%s: transcribed %d characters", name, len(transcript.strip())
+                )
             except Exception as exc:  # noqa: BLE001 - a clip still indexes silently
                 logger.warning("could not transcribe %s: %s", name, exc)
 
@@ -402,9 +451,10 @@ def _row_values(row: InventoryRow, item: IndexedItem) -> list:
         row.number,
         row.file,
         row.folder,
-        row.kind,
         LINK_LABEL if row.drive_url else EMPTY,
         facts.description.strip() or EMPTY,
+        LINK_LABEL if item.screenshots_url else EMPTY,
+        item.transcript.strip() or EMPTY,
         facts.product.strip() or EMPTY,
         facts.brand.strip() or EMPTY,
         facts.breed.strip() or EMPTY,
@@ -412,8 +462,6 @@ def _row_values(row: InventoryRow, item: IndexedItem) -> list:
         facts.kind.strip() or EMPTY,
         facts.text_in_image.strip() or EMPTY,
         row.size_kb if row.size_kb is not None else EMPTY,
-        LINK_LABEL if item.screenshots_url else EMPTY,
-        item.transcript.strip() or EMPTY,
     ]
 
 
@@ -426,6 +474,25 @@ def indexed_filenames(out: Path) -> set[str]:
         return _filenames(workbook[INDEX_SHEET])
     finally:
         workbook.close()
+
+
+def _check_header(sheet, out: Path) -> None:
+    """Refuse a sheet whose columns are not the ones a row is written in.
+
+    Rows are appended by position, so a header from an older layout would file
+    every new value under the wrong heading and go on looking like an index.
+    """
+    header = [cell.value for cell in sheet[1]]
+    while header and header[-1] is None:
+        header.pop()
+    if header != list(COLUMNS):
+        raise ValueError(
+            f"{out.name} has a different set of columns to the ones written "
+            f"now, so appending to it would misfile every value.\n"
+            f"  it has: {header}\n"
+            f"  expected: {list(COLUMNS)}\n"
+            f"Move it aside, or bring its header and column order into line."
+        )
 
 
 def _filenames(sheet) -> set[str]:
@@ -455,7 +522,9 @@ def open_index(out: Path) -> tuple[Workbook, set[str]]:
     """
     if out.exists():
         workbook = load_workbook(out)
-        return workbook, _filenames(workbook[INDEX_SHEET])
+        sheet = workbook[INDEX_SHEET]
+        _check_header(sheet, out)
+        return workbook, _filenames(sheet)
 
     workbook = Workbook()
     sheet = workbook.active
@@ -480,53 +549,63 @@ def append_row(workbook: Workbook, row: InventoryRow, item: IndexedItem) -> None
 
 
 async def _index_one(
-    client: httpx.AsyncClient, row: InventoryRow, model: str
+    client: httpx.AsyncClient, row: InventoryRow, model: str, marker: str = ""
 ) -> IndexedItem:
     """Download one file and read it, cleaning up after itself."""
+    started = time.monotonic()
+    size = f"{row.size_kb / 1024:.1f} MB" if row.size_kb else "unknown size"
+    logger.info("%s%s -- %s, %s", marker, row.file, row.kind, size)
+
     data = await drive.download(client, row.drive_url)
+    logger.info(
+        "%s%s: downloaded %.1f MB in %.0fs",
+        marker,
+        row.file,
+        len(data) / 1_048_576,
+        time.monotonic() - started,
+    )
+
     suffix = Path(row.file).suffix or (".mp4" if row.is_video else ".jpg")
     handle, name = tempfile.mkstemp(suffix=suffix)
     local = Path(name)
     try:
-        with open(handle, "wb") as f:
-            f.write(data)
         if row.is_video:
-            return await index_video(client, local, row.file, model, row.drive_url)
-        return IndexedItem(facts=await describe(local, model))
+            with open(handle, "wb") as f:
+                f.write(data)
+            item = await index_video(client, local, row.file, model, row.drive_url)
+        else:
+            with open(handle, "wb") as f:
+                f.write(data)
+            item = IndexedItem(facts=await describe(local, model))
+        logger.info(
+            "%s%s: done in %.0fs, %d characters",
+            marker,
+            row.file,
+            time.monotonic() - started,
+            len(item.facts.description),
+        )
+        return item
     finally:
         local.unlink(missing_ok=True)
 
 
-def _why_nothing_matched(
-    inventory: Path, only_recommended: bool, folder: str | None
-) -> str:
-    """Say which filter emptied the list, and what to do about it.
-
-    Six of the eleven top-level folders carry no 'Рекомендовано (пілот)' mark at
-    all, so asking for one of them without --index-all is the ordinary way to
-    end up with nothing, and 'nothing matched' on its own does not explain it.
-    """
-    everything = read_inventory(inventory, only_recommended=False, folder=folder)
-    if everything and only_recommended:
-        where = f" under {folder!r}" if folder else ""
-        return (
-            f"{len(everything)} images are listed{where}, but none is marked "
-            f"'{RECOMMENDED}' in the 'Рекомендовано (пілот)' column. Pass "
-            f"--index-all to index them anyway."
-        )
+def _why_nothing_matched(inventory: Path, folder: str | None) -> str:
+    """Say what emptied the list, and what to do about it."""
     if folder:
-        known = sorted({r.folder for r in read_inventory(inventory, False)})
+        known = sorted({r.folder for r in read_inventory(inventory)})
         return (
-            f"no images in a folder matching {folder!r}. The inventory lists: "
+            f"no files in a folder matching {folder!r}. The inventory lists: "
             + ", ".join(known)
         )
-    return f"no images listed in {inventory.name}"
+    return (
+        f"nothing to index in {inventory.name} -- no row is typed "
+        f"{IMAGE_KIND!r} or {VIDEO_KIND!r} with a Google Drive link"
+    )
 
 
 async def build_index(
     inventory: Path = INVENTORY_FILE,
     out: Path = OUTPUT_FILE,
-    only_recommended: bool = True,
     folder: str | None = None,
     limit: int | None = None,
     model: str = DESCRIBE_MODEL,
@@ -542,11 +621,11 @@ async def build_index(
     if parallelism < 1:
         raise ValueError(f"parallelism must be at least 1, got {parallelism}")
 
-    rows = read_inventory(inventory, only_recommended, folder)
+    rows = read_inventory(inventory, folder)
     if not rows:
         # Distinct from "everything is already indexed", which is what an empty
         # todo list means further down.
-        raise ValueError(_why_nothing_matched(inventory, only_recommended, folder))
+        raise ValueError(_why_nothing_matched(inventory, folder))
 
     workbook, done = open_index(out)
 
@@ -566,28 +645,37 @@ async def build_index(
 
     if not todo:
         if skipped:
-            print(
-                f"nothing to do: all {skipped} listed images are already in "
-                f"{out.name} by filename",
-                file=sys.stderr,
+            logger.info(
+                "nothing to do: all %d listed files are already in %s by filename",
+                skipped,
+                out.name,
             )
         return 0, []
 
     if skipped:
-        print(
-            f"skipping {skipped} of {len(rows)} listed images already in "
-            f"{out.name} by filename",
-            file=sys.stderr,
+        logger.info(
+            "skipping %d of %d listed files already in %s by filename",
+            skipped,
+            len(rows),
+            out.name,
         )
+    logger.info("indexing %d files, %d at a time", len(todo), parallelism)
 
     out.parent.mkdir(parents=True, exist_ok=True)
     gate = asyncio.Semaphore(parallelism)
     indexed = 0
     failures: list[str] = []
 
+    started = time.monotonic()
+    position = 0
+
     async def one(client, row):
+        nonlocal position
         async with gate:
-            return await _index_one(client, row, model)
+            # Counted as it starts, so the number tracks what is on screen
+            # rather than the order things happen to finish in.
+            position += 1
+            return await _index_one(client, row, model, f"[{position}/{len(todo)}] ")
 
     # Long enough for a video on a slow link -- the library holds clips of tens
     # of megabytes -- bounded so a stalled download cannot hold up a run over
@@ -610,10 +698,16 @@ async def build_index(
                 append_row(workbook, row, result)
                 indexed += 1
             workbook.save(out)
-            print(
-                f"{min(start + chunk, len(todo))}/{len(todo)} "
-                f"({indexed} indexed, {len(failures)} failed)",
-                file=sys.stderr,
+            done_so_far = min(start + chunk, len(todo))
+            rate = (time.monotonic() - started) / max(done_so_far, 1)
+            left = (len(todo) - done_so_far) * rate
+            logger.info(
+                "saved %d/%d (%d indexed, %d failed)%s",
+                done_so_far,
+                len(todo),
+                indexed,
+                len(failures),
+                f" -- about {left / 60:.0f} min left" if done_so_far < len(todo) else "",
             )
     return indexed, failures
 
@@ -644,16 +738,15 @@ def main() -> int:
         "--out", type=Path, default=OUTPUT_FILE, help="the index to write or extend"
     )
     parser.add_argument(
-        "--all",
-        action="store_true",
-        help="every image in the inventory, not only those marked "
-        "'Рекомендовано (пілот)'",
-    )
-    parser.add_argument(
-        "--folder", default=None, help="only images under this top-level folder"
+        "--folder", default=None, help="only files under this top-level folder"
     )
     parser.add_argument(
         "--limit", type=int, default=None, metavar="N", help="stop after N images"
+    )
+    parser.add_argument(
+        "--quiet",
+        action="store_true",
+        help="only warnings and failures, instead of a line per file",
     )
     parser.add_argument(
         "--parallel",
@@ -670,13 +763,12 @@ def main() -> int:
     )
     args = parser.parse_args()
 
-    logging.basicConfig(level=logging.WARNING, format="%(message)s")
+    show_progress(args.quiet)
     try:
         indexed, failures = asyncio.run(
             build_index(
                 inventory=args.inventory,
                 out=args.out,
-                only_recommended=not args.all,
                 folder=args.folder,
                 limit=args.limit,
                 model=args.model,

@@ -75,15 +75,8 @@ def index_calls(monkeypatch):
     """Capture what the CLI asks the indexer for, without Drive or a model."""
     calls = []
 
-    async def fake_build(only_recommended=True, folder=None, limit=None, parallelism=0):
-        calls.append(
-            {
-                "recommended": only_recommended,
-                "folder": folder,
-                "limit": limit,
-                "parallel": parallelism,
-            }
-        )
+    async def fake_build(folder=None, limit=None, parallelism=0):
+        calls.append({"folder": folder, "limit": limit, "parallel": parallelism})
         return 2, []
 
     monkeypatch.setattr(cli, "build_index", fake_build)
@@ -97,7 +90,6 @@ def test_index_images_without_a_number_does_the_whole_list(
 
     assert cli.main() == 0
     assert index_calls[0] == {
-        "recommended": True,
         "folder": None,
         "limit": None,
         "parallel": PARALLELISM,
@@ -105,22 +97,15 @@ def test_index_images_without_a_number_does_the_whole_list(
     assert "indexed 2 images" in capsys.readouterr().out
 
 
-def test_index_images_takes_a_cap_a_folder_and_the_whole_library(
-    monkeypatch, index_calls
-):
+def test_index_images_takes_a_cap_a_folder_and_a_parallelism(monkeypatch, index_calls):
     monkeypatch.setattr(
         "sys.argv",
-        ["prog", "--index-images", "20", "--index-all", "--index-folder", "Grooming",
+        ["prog", "--index-images", "20", "--index-folder", "Grooming",
          "--index-parallel", "8"],
     )
 
     assert cli.main() == 0
-    assert index_calls[0] == {
-        "recommended": False,
-        "folder": "Grooming",
-        "limit": 20,
-        "parallel": 8,
-    }
+    assert index_calls[0] == {"folder": "Grooming", "limit": 20, "parallel": 8}
 
 
 def test_the_indexer_is_not_run_unless_asked(monkeypatch, index_calls):

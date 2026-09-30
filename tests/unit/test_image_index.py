@@ -34,21 +34,25 @@ def _jpeg(path, size=(32, 32)):
 
 
 def _inventory(tmp_path, rows):
-    """An inventory in the real one's shape: links live in the cell, not the text."""
+    """An inventory in the real one's shape: links live in the cell, not the text.
+
+    A row is (folder, name, kind, drive_id); a drive_id of None writes the row
+    with no link at all, as whole folders of the real inventory have.
+    """
     workbook = Workbook()
     sheet = workbook.active
     sheet.title = INVENTORY_SHEET
     sheet.append(
         ["#", "Папка (верхній рівень)", "Шлях", "Файл", "Тип", "Розмір, KB",
-         "Дата зміни", "Локальний файл", "Google Drive", "Рекомендовано (пілот)"]
+         "Дата зміни", "Google Drive"]
     )
-    for number, (folder, name, kind, recommended, drive_id) in enumerate(rows, 1):
+    for number, (folder, name, kind, drive_id) in enumerate(rows, 1):
         sheet.append(
             [number, folder, f"{folder}/{name}", name, kind, 100.5, "2024-06-11",
-             "Відкрити", "Відкрити", recommended]
+             "Відкрити" if drive_id else None]
         )
-        sheet.cell(row=number + 1, column=8).hyperlink = f"file:///G:/{folder}/{name}"
-        sheet.cell(row=number + 1, column=9).hyperlink = DRIVE.format(drive_id)
+        if drive_id:
+            sheet.cell(row=number + 1, column=8).hyperlink = DRIVE.format(drive_id)
 
     tmp_path.mkdir(parents=True, exist_ok=True)
     path = tmp_path / "index_inventory.xlsx"
@@ -98,22 +102,31 @@ def test_a_link_with_no_id_is_refused():
         file_id("https://example.com/photo.jpg")
 
 
-def test_only_recommended_files_are_read_by_default(tmp_path):
+def test_everything_listed_is_read(tmp_path):
+    """The inventory no longer carries a 'Рекомендовано (пілот)' column."""
     inventory = _inventory(
         tmp_path,
         [
-            ("Grooming", "a.jpg", "зображення", "так", "id_a"),
-            ("Grooming", "b.jpg", "зображення", None, "id_b"),
-            ("Grooming", "clip.mp4", "відео", "так", "id_c"),
+            ("Grooming", "a.jpg", "зображення", "id_a"),
+            ("Grooming", "b.jpg", "зображення", "id_b"),
+            ("Grooming", "clip.mp4", "відео", "id_c"),
         ],
     )
 
-    assert [r.file for r in read_inventory(inventory)] == ["a.jpg", "clip.mp4"]
-    assert [r.file for r in read_inventory(inventory, only_recommended=False)] == [
-        "a.jpg",
-        "b.jpg",
-        "clip.mp4",
-    ]
+    assert [r.file for r in read_inventory(inventory)] == ["a.jpg", "b.jpg", "clip.mp4"]
+
+
+def test_a_row_with_no_drive_link_is_skipped(tmp_path):
+    """1775 rows of the real inventory have none; there is nothing to fetch."""
+    inventory = _inventory(
+        tmp_path,
+        [
+            ("stories", "a.jpg", "зображення", None),
+            ("Grooming", "b.jpg", "зображення", "id_b"),
+        ],
+    )
+
+    assert [r.file for r in read_inventory(inventory)] == ["b.jpg"]
 
 
 def test_video_is_read_and_stray_files_are_not(tmp_path):
@@ -121,10 +134,10 @@ def test_video_is_read_and_stray_files_are_not(tmp_path):
     inventory = _inventory(
         tmp_path,
         [
-            ("B2B", "clip.mp4", "відео", "так", "id_a"),
-            ("B2B", "notes.pdf", "зображення", "так", "id_b"),
-            ("B2B", "sheet.xlsx", "інше", "так", "id_c"),
-            ("B2B", "photo.HEIC", "зображення", "так", "id_d"),
+            ("B2B", "clip.mp4", "відео", "id_a"),
+            ("B2B", "notes.pdf", "зображення", "id_b"),
+            ("B2B", "sheet.xlsx", "інше", "id_c"),
+            ("B2B", "photo.HEIC", "зображення", "id_d"),
         ],
     )
 
@@ -138,8 +151,8 @@ def test_a_folder_can_be_picked_out(tmp_path):
     inventory = _inventory(
         tmp_path,
         [
-            ("Dogs_from_Grooming", "a.jpg", "зображення", "так", "id_a"),
-            ("B2B-партнери", "b.jpg", "зображення", "так", "id_b"),
+            ("Dogs_from_Grooming", "a.jpg", "зображення", "id_a"),
+            ("B2B-партнери", "b.jpg", "зображення", "id_b"),
         ],
     )
 
@@ -150,7 +163,7 @@ def test_a_folder_can_be_picked_out(tmp_path):
 
 async def test_the_index_is_written_in_the_pilot_shape(tmp_path, indexed):
     inventory = _inventory(
-        tmp_path, [("Grooming", "a.jpg", "зображення", "так", "id_a")]
+        tmp_path, [("Grooming", "a.jpg", "зображення", "id_a")]
     )
     out = tmp_path / "images_index.xlsx"
 
@@ -162,12 +175,12 @@ async def test_the_index_is_written_in_the_pilot_shape(tmp_path, indexed):
     written = dict(zip(COLUMNS, (c.value for c in sheet[2]), strict=True))
     assert written["Файл"] == "a.jpg"
     assert written["Папка"] == "Grooming"
-    assert written["Тип"] == "img"
     assert written["Опис"] == "Рудий пес на дивані"
     # Absent fields carry the pilot's dash rather than an empty cell.
     assert written["Продукт"] == EMPTY and written["Бренд"] == EMPTY
     assert written["Теги"] == "собака, такса, лайфстайл"
-    assert written["Категорія"] == "лайфстайл"
+    # 'Тип' keeps the pilot's meaning: what kind of shot this is.
+    assert written["Тип"] == "лайфстайл"
     # An image has neither of the video columns.
     assert written["Screenshots"] == EMPTY and written["AudioTranscribe"] == EMPTY
     # The link column stays clickable, as it is in the inventory.
@@ -341,7 +354,7 @@ async def test_a_video_row_is_written_with_its_screenshots_and_transcript(
     tmp_path, clip, monkeypatch
 ):
     inventory = _inventory(
-        tmp_path, [("UGC", "IMG_1.MOV", "відео", "так", "id_v")]
+        tmp_path, [("UGC", "IMG_1.MOV", "відео", "id_v")]
     )
     out = tmp_path / "images_index.xlsx"
 
@@ -355,7 +368,7 @@ async def test_a_video_row_is_written_with_its_screenshots_and_transcript(
     assert (count, failures) == (1, [])
     sheet = load_workbook(out)[INDEX_SHEET]
     written = dict(zip(COLUMNS, (c.value for c in sheet[2]), strict=True))
-    assert written["Тип"] == "video"
+    assert written["Файл"] == "IMG_1.MOV"
     assert written["AudioTranscribe"] == "привіт, це тест"
     assert written["Screenshots"] == "Відкрити"
     column = COLUMNS.index("Screenshots") + 1
@@ -369,10 +382,10 @@ async def test_a_name_already_in_the_index_is_skipped_whatever_its_folder(
 ):
     """Matching is on 'Файл' alone, so the same name elsewhere counts as done."""
     first = _inventory(
-        tmp_path / "one", [("Grooming", "IMG_0830.HEIC", "зображення", "так", "id_a")]
+        tmp_path / "one", [("Grooming", "IMG_0830.HEIC", "зображення", "id_a")]
     )
     second = _inventory(
-        tmp_path / "two", [("UGC", "IMG_0830.HEIC", "зображення", "так", "id_b")]
+        tmp_path / "two", [("UGC", "IMG_0830.HEIC", "зображення", "id_b")]
     )
     out = tmp_path / "images_index.xlsx"
 
@@ -386,9 +399,9 @@ async def test_one_name_twice_in_a_run_is_described_once(tmp_path, indexed):
     inventory = _inventory(
         tmp_path,
         [
-            ("Сток", "1.jpg", "зображення", "так", "id_a"),
-            ("Сток", "1.jpg", "зображення", "так", "id_b"),
-            ("Сток", "2.jpg", "зображення", "так", "id_c"),
+            ("Сток", "1.jpg", "зображення", "id_a"),
+            ("Сток", "1.jpg", "зображення", "id_b"),
+            ("Сток", "2.jpg", "зображення", "id_c"),
         ],
     )
     out = tmp_path / "images_index.xlsx"
@@ -427,6 +440,33 @@ def test_an_index_without_the_file_column_is_refused(tmp_path):
         image_index.indexed_filenames(out)
 
 
+def test_an_index_from_an_older_layout_is_refused(tmp_path):
+    """Rows are appended by position, so a stale header would misfile them all."""
+    workbook = Workbook()
+    sheet = workbook.active
+    sheet.title = INDEX_SHEET
+    sheet.append(["#", "Файл", "Папка", "Локальний шлях", "Google Drive", "Опис"])
+    sheet.append([1, "a.jpg", "Grooming", "Відкрити", "Відкрити", "опис"])
+    out = tmp_path / "images_index.xlsx"
+    workbook.save(out)
+
+    with pytest.raises(ValueError, match="different set of columns"):
+        image_index.open_index(out)
+
+
+def test_the_current_layout_is_accepted(tmp_path):
+    workbook = Workbook()
+    sheet = workbook.active
+    sheet.title = INDEX_SHEET
+    sheet.append(list(COLUMNS))
+    sheet.append([1, "a.jpg", "Grooming"] + [EMPTY] * (len(COLUMNS) - 3))
+    out = tmp_path / "images_index.xlsx"
+    workbook.save(out)
+
+    _, done = image_index.open_index(out)
+    assert done == {"a.jpg"}
+
+
 def test_no_index_yet_means_nothing_is_skipped(tmp_path):
     assert image_index.indexed_filenames(tmp_path / "not-there.xlsx") == set()
 
@@ -435,8 +475,8 @@ async def test_a_second_run_only_describes_what_is_missing(tmp_path, indexed):
     inventory = _inventory(
         tmp_path,
         [
-            ("Grooming", "a.jpg", "зображення", "так", "id_a"),
-            ("Grooming", "b.jpg", "зображення", "так", "id_b"),
+            ("Grooming", "a.jpg", "зображення", "id_a"),
+            ("Grooming", "b.jpg", "зображення", "id_b"),
         ],
     )
     out = tmp_path / "images_index.xlsx"
@@ -451,6 +491,49 @@ async def test_a_second_run_only_describes_what_is_missing(tmp_path, indexed):
     assert load_workbook(out)[INDEX_SHEET].max_row == 3
 
 
+def test_progress_is_shown_but_the_http_client_is_not(caplog):
+    """httpx logs a line per request at INFO, one per screenshot."""
+    import logging
+
+    image_index.show_progress()
+    assert logging.getLogger("instagram_marketing_agent.image_index").getEffectiveLevel() == (
+        logging.INFO
+    )
+    for chatty in ("httpx", "httpcore"):
+        assert logging.getLogger(chatty).getEffectiveLevel() == logging.WARNING
+
+
+def test_quiet_keeps_the_failures_and_drops_the_rest():
+    import logging
+
+    image_index.show_progress(quiet=True)
+    assert logging.getLogger().level == logging.WARNING
+    image_index.show_progress()
+
+
+async def test_each_file_is_announced_as_it_goes(tmp_path, indexed, caplog):
+    """A run holds clips of tens of megabytes; silence looks like a hang."""
+    import logging
+
+    inventory = _inventory(
+        tmp_path,
+        [
+            ("Grooming", "a.jpg", "зображення", "id_a"),
+            ("Grooming", "b.jpg", "зображення", "id_b"),
+        ],
+    )
+
+    with caplog.at_level(logging.INFO, logger="instagram_marketing_agent.image_index"):
+        await image_index.build_index(inventory, tmp_path / "out.xlsx")
+
+    assert "indexing 2 files" in caplog.text
+    # Each file, numbered, with what it is and how it went.
+    assert "[1/2] a.jpg -- img" in caplog.text
+    assert "[2/2] b.jpg -- img" in caplog.text
+    assert "a.jpg: done in" in caplog.text
+    assert "saved 2/2 (2 indexed, 0 failed)" in caplog.text
+
+
 def test_five_images_run_at_once_by_default():
     assert PARALLELISM == 5
 
@@ -459,7 +542,7 @@ async def test_no_more_than_the_parallelism_are_in_flight(tmp_path, monkeypatch)
     """The ceiling holds across save boundaries, not just within one chunk."""
     inventory = _inventory(
         tmp_path,
-        [("Grooming", f"{i}.jpg", "зображення", "так", f"id_{i}") for i in range(12)],
+        [("Grooming", f"{i}.jpg", "зображення", f"id_{i}") for i in range(12)],
     )
     live = {"now": 0, "peak": 0}
 
@@ -494,7 +577,7 @@ async def test_a_parallelism_above_the_save_cadence_is_not_throttled(
     """A chunk must never be smaller than what may run at once."""
     inventory = _inventory(
         tmp_path,
-        [("Grooming", f"{i}.jpg", "зображення", "так", f"id_{i}") for i in range(16)],
+        [("Grooming", f"{i}.jpg", "зображення", f"id_{i}") for i in range(16)],
     )
     live = {"now": 0, "peak": 0}
 
@@ -520,30 +603,9 @@ async def test_a_parallelism_above_the_save_cadence_is_not_throttled(
     assert live["peak"] == 16
 
 
-async def test_a_folder_with_nothing_recommended_says_so(tmp_path, indexed):
-    """Six real folders carry no pilot mark; 'already indexed' would be a lie."""
-    inventory = _inventory(
-        tmp_path,
-        [
-            ("B2B", "a.jpg", "зображення", None, "id_a"),
-            ("B2B", "b.jpg", "зображення", None, "id_b"),
-            ("Grooming", "c.jpg", "зображення", "так", "id_c"),
-        ],
-    )
-
-    with pytest.raises(ValueError, match="none is marked"):
-        await image_index.build_index(inventory, tmp_path / "out.xlsx", folder="B2B")
-
-    # ...and --index-all is exactly what the message tells you to reach for.
-    count, _ = await image_index.build_index(
-        inventory, tmp_path / "out.xlsx", only_recommended=False, folder="B2B"
-    )
-    assert count == 2
-
-
 async def test_an_unknown_folder_lists_the_ones_there_are(tmp_path, indexed):
     inventory = _inventory(
-        tmp_path, [("Grooming", "a.jpg", "зображення", "так", "id_a")]
+        tmp_path, [("Grooming", "a.jpg", "зображення", "id_a")]
     )
 
     with pytest.raises(ValueError, match="Grooming"):
@@ -553,7 +615,7 @@ async def test_an_unknown_folder_lists_the_ones_there_are(tmp_path, indexed):
 async def test_an_index_that_is_already_complete_is_not_an_error(tmp_path, indexed):
     """That is the one case the 'nothing left to index' message is for."""
     inventory = _inventory(
-        tmp_path, [("Grooming", "a.jpg", "зображення", "так", "id_a")]
+        tmp_path, [("Grooming", "a.jpg", "зображення", "id_a")]
     )
     out = tmp_path / "out.xlsx"
 
@@ -563,7 +625,7 @@ async def test_an_index_that_is_already_complete_is_not_an_error(tmp_path, index
 
 async def test_a_parallelism_below_one_is_refused(tmp_path):
     inventory = _inventory(
-        tmp_path, [("Grooming", "a.jpg", "зображення", "так", "id_a")]
+        tmp_path, [("Grooming", "a.jpg", "зображення", "id_a")]
     )
     with pytest.raises(ValueError, match="at least 1"):
         await image_index.build_index(inventory, tmp_path / "out.xlsx", parallelism=0)
@@ -576,8 +638,8 @@ async def test_an_image_that_fails_is_reported_and_left_for_next_time(
     inventory = _inventory(
         tmp_path,
         [
-            ("Grooming", "good.jpg", "зображення", "так", "id_a"),
-            ("Grooming", "gone.jpg", "зображення", "так", "id_b"),
+            ("Grooming", "good.jpg", "зображення", "id_a"),
+            ("Grooming", "gone.jpg", "зображення", "id_b"),
         ],
     )
     out = tmp_path / "images_index.xlsx"

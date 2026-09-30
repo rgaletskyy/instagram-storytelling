@@ -11,6 +11,7 @@ SDK would pull a dependency tree in for them.
 from __future__ import annotations
 
 import json
+import logging
 import mimetypes
 import os
 import re
@@ -20,6 +21,8 @@ from pathlib import Path
 import httpx
 
 from .config import load_dotenv
+
+logger = logging.getLogger(__name__)
 
 DRIVE_API = "https://www.googleapis.com/drive/v3"
 DRIVE_UPLOAD = "https://www.googleapis.com/upload/drive/v3/files"
@@ -202,9 +205,14 @@ async def public_folder(
         json={"role": "reader", "type": "anyone"},
     )
     if shared.status_code >= 400:
-        raise RuntimeError(
-            f"the folder {name!r} was created but could not be shared "
-            f"({shared.status_code}): {shared.text.strip()[:300]}"
+        # Workspace orgs commonly forbid link-sharing outside the domain. The
+        # folder still exists and everyone who can open the index can open the
+        # drive it lives in, so this is not worth losing the row over.
+        logger.warning(
+            "%s was created but could not be shared by link (%s): %s",
+            name,
+            shared.status_code,
+            shared.text.strip()[:200],
         )
     return folder, folder_link(folder)
 

@@ -21,6 +21,7 @@ from .image_index import (
     PARALLELISM,
     build_index,
     report,
+    show_progress,
 )
 from .workflow import create_campaign, create_lifestyle_content, verify_content
 
@@ -58,11 +59,11 @@ def _run_lifestyle(args) -> int:
 
 
 def _run_index(args) -> int:
-    """Describe the image library the inventory lists, instead of generating."""
+    """Describe the media library the inventory lists, instead of generating."""
+    show_progress(args.index_quiet)
     try:
         indexed, failures = asyncio.run(
             build_index(
-                only_recommended=not args.index_all,
                 folder=args.index_folder,
                 # 0 is the flag given with no number: index everything listed.
                 limit=args.index_images or None,
@@ -142,22 +143,22 @@ def main() -> int:
         const=0,
         default=None,
         metavar="N",
-        help=f"describe the image library listed in {INVENTORY_FILE.name} into "
+        help=f"describe the media library listed in {INVENTORY_FILE.name} into "
         f"{OUTPUT_FILE.name}, instead of generating anything. N caps how many "
-        f"to do in this run; without it, every image listed. Runs are "
+        f"to do in this run; without it, every file listed. Runs are "
         f"resumable -- anything already indexed is skipped",
-    )
-    parser.add_argument(
-        "--index-all",
-        action="store_true",
-        help="with --index-images, the whole library rather than only the rows "
-        "marked 'Рекомендовано (пілот)'",
     )
     parser.add_argument(
         "--index-folder",
         default=None,
         metavar="NAME",
-        help="with --index-images, only images under this top-level folder",
+        help="with --index-images, only files under this top-level folder",
+    )
+    parser.add_argument(
+        "--index-quiet",
+        action="store_true",
+        help="with --index-images, only warnings and failures instead of a "
+        "line per file",
     )
     parser.add_argument(
         "--index-parallel",
