@@ -60,8 +60,12 @@ Separate top-level packages, not part of `instagram_marketing_agent`; layout fol
 
 FastAPI over `SearchService`, spec `specs/api.md`. Built by a factory: `uv run uvicorn api.app:create_app --factory`. One endpoint, `POST /searchcontext`. Private by IAM, not network (ingress all, no VPC): Cloud Run admits only the portal's service account; the API itself verifies the end user's Google ID token from `X-User-Token` (`api/auth.py`, audience `USER_TOKEN_AUDIENCE`, allowlist `ALLOWED_USERS`, fail-closed at startup) and logs every call and refusal as JSON with the user's email. Tests fake `auth.verify_google_id_token` and pass a fake service to `create_app`. `Dockerfile`/`.dockerignore`/`.gcloudignore` are for this service; deploy steps are in README "Search API".
 
+### Marketing portal (`portal/`)
+
+Separate Next.js 16 app (npm, not uv), spec `specs/marketing-portal.md`; its own `portal/AGENTS.md` says to read the bundled docs in `portal/node_modules/next/dist/docs/` before writing Next.js code. NextAuth v4 with Google, allowlist `ALLOWED_USERS`; the JWT session cookie holds the user's Google ID token + refresh token, kept out of the `session` callback so the browser never sees them. `/api/search` (route handler) is the only path to the API: it adds `X-User-Token` and, when `API_AUDIENCE` is set, a metadata-server service token. Commands (in `portal/`): `npm run dev`, `npm test` (node:test on `src/lib/*.test.ts`), `npm run typecheck`, `npm run lint`, `npm run build`.
+
 ## Local-only data
 
 Gitignored and absent in a fresh clone: `content/input|output/*`, `src/resources/products.xlsx` (falls back to committed `products.sample.xlsx`), `src/resources/images_index/`, `.tools/`, `.decor-cache/`.
 
-`specs/` holds design notes: `mcp-server.md` (original brief), `hd-marketing-rag.md`, `search-service.md` and `api.md` (the RAG service and its API).
+`specs/` holds design notes: `mcp-server.md` (original brief), `hd-marketing-rag.md`, `search-service.md`, `api.md` and `marketing-portal.md` (the RAG service, its API and the portal).

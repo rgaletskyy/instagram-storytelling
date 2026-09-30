@@ -1,0 +1,3 @@
+# What `gcloud run deploy --source portal` leaves out of the upload to Cloud Build.
+#!include:.gitignore
+#!include:.dockerignore

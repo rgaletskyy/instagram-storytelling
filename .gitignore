@@ -8,7 +8,7 @@ dist/
 build/
 
 # Packaging
-lib/
+/lib/
 *.mcpb
 
 # Runtime state — OAuth tokens and run working directories

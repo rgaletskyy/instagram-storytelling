@@ -489,6 +489,13 @@ gcloud run services add-iam-policy-binding hd-api --region=$REGION \
   signing in to the portal. The API checks it. It expires after an hour, so the
   portal has to refresh it rather than forward the one from sign-in forever.
 
+## Marketing portal
+
+`portal/` is the Next.js app the marketing team uses: Gmail sign-in limited to
+an allowlist, and a chat that sends each query to the search API and shows the
+result as JSON. It is the only caller the API admits. Setup, the Google OAuth
+client and Cloud Run deployment are in `portal/README.md`.
+
 ## Product catalogue
 
 `src/resources/products.xlsx` holds the product data and is **not** in version control. A
