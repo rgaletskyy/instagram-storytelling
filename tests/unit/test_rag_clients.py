@@ -137,6 +137,69 @@ async def test_embedding_failures_raise_embedding_error(genai):
         await EmbeddingClient(client=genai).embed_query("q")
 
 
+class _RateLimited(Exception):
+    def __init__(self, code=429):
+        super().__init__(f"{code} RESOURCE_EXHAUSTED")
+        self.code = code
+
+
+class _Flaky(_Genai):
+    """Fails with the given errors in turn, then answers."""
+
+    def __init__(self, errors):
+        super().__init__()
+        self.errors = list(errors)
+        self.attempts = 0
+
+    async def embed_content(self, **kwargs):
+        self.attempts += 1
+        if self.errors:
+            raise self.errors.pop(0)
+        return await super().embed_content(**kwargs)
+
+
+def _record_sleeps(monkeypatch):
+    sleeps = []
+
+    async def sleep(seconds):
+        sleeps.append(seconds)
+
+    monkeypatch.setattr(embedding_client.asyncio, "sleep", sleep)
+    return sleeps
+
+
+async def test_a_rate_limited_request_is_retried_after_growing_waits(monkeypatch):
+    sleeps = _record_sleeps(monkeypatch)
+    genai = _Flaky([_RateLimited(), _RateLimited()])
+
+    vector = await EmbeddingClient(client=genai).embed_query("q")
+
+    assert len(vector) == DIMENSION
+    assert genai.attempts == 3
+    assert sleeps == [4, 8]
+
+
+async def test_rate_limiting_gives_up_after_five_retries(monkeypatch):
+    sleeps = _record_sleeps(monkeypatch)
+    genai = _Flaky([_RateLimited() for _ in range(6)])
+
+    with pytest.raises(EmbeddingError, match="429"):
+        await EmbeddingClient(client=genai).embed_query("q")
+
+    assert genai.attempts == 6
+    assert sleeps == [4, 8, 16, 32, 64]
+
+
+async def test_other_errors_are_not_retried(monkeypatch):
+    sleeps = _record_sleeps(monkeypatch)
+    genai = _Flaky([_RateLimited(code=400)])
+
+    with pytest.raises(EmbeddingError):
+        await EmbeddingClient(client=genai).embed_query("q")
+
+    assert genai.attempts == 1 and sleeps == []
+
+
 # --- Firestore ---------------------------------------------------------------------
 
 

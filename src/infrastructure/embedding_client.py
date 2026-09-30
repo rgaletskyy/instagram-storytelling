@@ -8,9 +8,12 @@ lands next to other queries, not next to the documents that answer it.
 from __future__ import annotations
 
 import asyncio
+import logging
 import os
 
 from domain.contracts import EmbeddingError
+
+logger = logging.getLogger(__name__)
 
 MODEL = "gemini-embedding-2"
 # Firestore indexes vectors of at most 2048 dimensions, so the model's native
@@ -20,6 +23,10 @@ DIMENSION = 1536
 # Inputs per request. Each is wrapped in its own Content: passed as bare
 # strings, several inputs come back as one aggregated embedding.
 BATCH_SIZE = 50
+# Seconds to wait before each retry of a request refused with 429 (rate limit):
+# 2^2 .. 2^6, so five retries and at most two minutes of waiting.
+RETRY_DELAYS = tuple(2**n for n in range(2, 7))
+_RATE_LIMITED = 429
 
 _QUERY_PREFIX = "task: search result | query: "
 _DOCUMENT_PREFIX = "title: none | text: "
@@ -50,14 +57,27 @@ class EmbeddingClient:
     async def _embed(self, texts: list[str]) -> list[list[float]]:
         from google.genai import types
 
-        try:
-            response = await self._client.aio.models.embed_content(
-                model=MODEL,
-                contents=[types.Content(parts=[types.Part(text=t)]) for t in texts],
-                config=types.EmbedContentConfig(output_dimensionality=DIMENSION),
-            )
-        except Exception as exc:  # noqa: BLE001
-            raise EmbeddingError(f"{MODEL} could not embed: {exc}") from exc
+        contents = [types.Content(parts=[types.Part(text=t)]) for t in texts]
+        config = types.EmbedContentConfig(output_dimensionality=DIMENSION)
+        for attempt in range(len(RETRY_DELAYS) + 1):
+            try:
+                response = await self._client.aio.models.embed_content(
+                    model=MODEL, contents=contents, config=config
+                )
+                break
+            except Exception as exc:  # noqa: BLE001
+                # google.genai.errors.APIError carries the HTTP status as `code`.
+                if getattr(exc, "code", None) != _RATE_LIMITED or attempt == len(RETRY_DELAYS):
+                    raise EmbeddingError(f"{MODEL} could not embed: {exc}") from exc
+                delay = RETRY_DELAYS[attempt]
+                logger.warning(
+                    "%s rate-limited (429); retry %d/%d in %ds",
+                    MODEL,
+                    attempt + 1,
+                    len(RETRY_DELAYS),
+                    delay,
+                )
+                await asyncio.sleep(delay)
         vectors = [list(e.values or []) for e in response.embeddings or []]
         if len(vectors) != len(texts) or any(len(v) != DIMENSION for v in vectors):
             raise EmbeddingError(
