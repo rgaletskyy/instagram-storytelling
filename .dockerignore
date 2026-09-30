@@ -1,0 +1,22 @@
+# Secrets and private data never go into the image. API keys reach Cloud Run
+# through Secret Manager; the spreadsheets are only read by the local indexer.
+.env
+.env.*
+src/resources/indices/
+src/resources/products.xlsx
+src/resources/images_index/
+
+# Local state and build output
+.git/
+.venv/
+.claude/
+.tools/
+.decor-cache/
+.pytest_cache/
+.ruff_cache/
+**/__pycache__/
+build/
+dist/
+content/
+tests/
+specs/

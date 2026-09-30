@@ -392,6 +392,103 @@ searched only when its probability is at least 0.3. The probabilities sum to 1,
 so a query that clearly belongs to one collection searches only that one, while
 one Jev is torn over can search two or all three.
 
+## Search API
+
+`src/api` puts `SearchService` behind one HTTP endpoint for the marketing portal
+(a Next.js app). Spec: `specs/api.md`.
+
+```
+POST /searchcontext
+Authorization: Bearer <ID token for the portal's service account>   -- checked by Cloud Run
+X-User-Token:  <the signed-in user's Google ID token>              -- checked by the API
+{"query": "шампунь для шпіца"}
+```
+
+The response is `SearchResult` with its contract field names: `products`,
+`instagramMessages`, `content`. Status codes:
+
+| Code | When |
+|---|---|
+| 400 | empty query |
+| 401 | no user token, or one that fails Google's signature, expiry, audience or has no verified email |
+| 403 | a verified user who is not on the allowlist |
+| 422 | the body has no `query` |
+| 502 | Gemini or Jev failed |
+| 503 | Firestore failed, or Google's signing certificates could not be fetched |
+
+**Who is calling is checked twice.** Cloud Run admits only the portal's
+service account (`--no-allow-unauthenticated`, `roles/run.invoker` for that
+account alone), and the portal gets its token from the metadata server, so no
+secret exists to leak. The API then verifies the user's own Google ID token --
+Google's signature, the portal's OAuth client id as audience -- and checks the
+email against `ALLOWED_USERS`. A forwarded email in a plain header would prove
+nothing. Every call and every refusal is logged as JSON with the user's email.
+
+Settings (the app will not start without the first two):
+
+| Variable | |
+|---|---|
+| `USER_TOKEN_AUDIENCE` | the portal's Google OAuth client id; comma-separated for more than one |
+| `ALLOWED_USERS` | emails allowed to call, comma-separated |
+| `GEMINI_API_KEY`, `TYPESAFE_API_KEY` | as for the indexer; from Secret Manager on Cloud Run |
+
+Run it locally:
+
+```bash
+uv run uvicorn api.app:create_app --factory --port 8080
+```
+
+### Deploying to Cloud Run
+
+**Private by IAM, not by network.** The service has a public URL, but Google's
+front end rejects any request without an ID token for the portal's service
+account before it reaches the container. There is no VPC: the API calls
+Firestore, Gemini and Jev over the public internet, with TLS and its own
+service account.
+
+Nothing below has been run; replace the placeholders. Region is where the
+other services run.
+
+```bash
+PROJECT=project-b2b68530-7524-4ecc-8e6
+REGION=europe-central2
+API_SA=hd-api@$PROJECT.iam.gserviceaccount.com
+PORTAL_SA=<the portal's service account>
+
+# 1. The API's own identity: Firestore read/write, and its two secrets.
+gcloud iam service-accounts create hd-api
+gcloud projects add-iam-policy-binding $PROJECT \
+  --member=serviceAccount:$API_SA --role=roles/datastore.user
+printf %s "$GEMINI_API_KEY"   | gcloud secrets create gemini-api-key   --data-file=-
+printf %s "$TYPESAFE_API_KEY" | gcloud secrets create typesafe-api-key --data-file=-
+for s in gemini-api-key typesafe-api-key; do
+  gcloud secrets add-iam-policy-binding $s \
+    --member=serviceAccount:$API_SA --role=roles/secretmanager.secretAccessor
+done
+
+# 2. Deploy with no anonymous calls. The ^;^ prefix makes ; the separator,
+#    since the values contain commas.
+gcloud run deploy hd-api --source . --region=$REGION \
+  --service-account=$API_SA \
+  --ingress=all --no-allow-unauthenticated \
+  --set-env-vars="^;^USER_TOKEN_AUDIENCE=<portal OAuth client id>;ALLOWED_USERS=<a@x.ua,b@x.ua>" \
+  --set-secrets=GEMINI_API_KEY=gemini-api-key:latest,TYPESAFE_API_KEY=typesafe-api-key:latest
+
+# 3. Only the portal may invoke it.
+gcloud run services add-iam-policy-binding hd-api --region=$REGION \
+  --member=serviceAccount:$PORTAL_SA --role=roles/run.invoker
+```
+
+**What the portal sends on every call:**
+
+- `Authorization: Bearer <service token>` -- an ID token for its service
+  account, with the API's URL as audience, fetched from the metadata server
+  (`google-auth-library`'s `getIdTokenClient(apiUrl)` in Node). No key is
+  stored anywhere. Cloud Run checks it; the API never sees a request without it.
+- `X-User-Token: <user token>` -- the Google ID token the user received on
+  signing in to the portal. The API checks it. It expires after an hour, so the
+  portal has to refresh it rather than forward the one from sign-in forever.
+
 ## Product catalogue
 
 `src/resources/products.xlsx` holds the product data and is **not** in version control. A

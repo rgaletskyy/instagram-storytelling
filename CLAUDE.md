@@ -56,8 +56,12 @@ Separate from campaigns. Reads `src/resources/images_index/index_inventory.xlsx`
 
 Separate top-level packages, not part of `instagram_marketing_agent`; layout follows the "Code structure" section of `specs/hd-marketing-rag.md`, behaviour follows `specs/search-service.md`. `routines/indexer.py` (`uv run rag-index`) embeds the spreadsheets in `src/resources/indices/` into the Firestore database `healthydoggo`; `domain.search_service.SearchService.find_similar` asks TypeSafe's Jev one `choice` question with each collection as an option (probability threshold 0.3; probabilities sum to 1, so a query searches one to three collections), then runs a cosine `find_nearest` (top 5) on each selected collection. Errors are the spec's `InvalidArgument` / `EmbeddingError` / `DataSourceError` in `domain/contracts.py`, raised by the clients. Embeddings are 1536-d (Firestore caps vector indexes at 2048), and gemini-embedding-2 takes query/document prefixes in the text instead of `task_type`.
 
+### Search API (`src/api`)
+
+FastAPI over `SearchService`, spec `specs/api.md`. Built by a factory: `uv run uvicorn api.app:create_app --factory`. One endpoint, `POST /searchcontext`. Private by IAM, not network (ingress all, no VPC): Cloud Run admits only the portal's service account; the API itself verifies the end user's Google ID token from `X-User-Token` (`api/auth.py`, audience `USER_TOKEN_AUDIENCE`, allowlist `ALLOWED_USERS`, fail-closed at startup) and logs every call and refusal as JSON with the user's email. Tests fake `auth.verify_google_id_token` and pass a fake service to `create_app`. `Dockerfile`/`.dockerignore`/`.gcloudignore` are for this service; deploy steps are in README "Search API".
+
 ## Local-only data
 
 Gitignored and absent in a fresh clone: `content/input|output/*`, `src/resources/products.xlsx` (falls back to committed `products.sample.xlsx`), `src/resources/images_index/`, `.tools/`, `.decor-cache/`.
 
-`specs/` holds design notes: `mcp-server.md` (original brief), `hd-marketing-rag.md` and `search-service.md` (the RAG service).
+`specs/` holds design notes: `mcp-server.md` (original brief), `hd-marketing-rag.md`, `search-service.md` and `api.md` (the RAG service and its API).
