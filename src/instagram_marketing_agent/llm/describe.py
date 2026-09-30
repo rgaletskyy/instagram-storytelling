@@ -120,7 +120,7 @@ async def transcribe_audio(audio_path: str | Path) -> str:
     """Transcribe an audio file.
 
     Uses gemini-3.5-transcribe rather than the image model named in
-    requirements.md, which cannot accept audio input. See research.md R2.
+    specs/mcp-server.md, which cannot accept audio input.
     """
     path = Path(audio_path)
     if not path.exists():

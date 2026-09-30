@@ -76,9 +76,8 @@ load_dotenv()
 
 
 # --- Models ------------------------------------------------------------------
-# Pinned in specs/001-instagram-story-agent/plan.md. GEMINI_TRANSCRIBE_MODEL is a
-# deliberate substitution: requirements.md named an image-generation model, which
-# cannot accept audio input. See research.md R2.
+# GEMINI_TRANSCRIBE_MODEL is a deliberate substitution: specs/mcp-server.md
+# named an image-generation model, which cannot accept audio input.
 
 CLAUDE_DESCRIBE_MODEL = "claude-sonnet-5"
 CLAUDE_SCRIPT_MODEL = "claude-opus-5"
@@ -120,7 +119,7 @@ BODY_MAX_PX = 34
 
 # Brand fonts, loaded by the rendered page from Google Fonts. Rendering in a
 # browser means the guidelines' mandated typefaces can finally be used rather
-# than substituted -- see research.md R6.
+# than substituted.
 FONT_HEADING = "Bitter"
 FONT_BODY = "Noto Sans"
 GOOGLE_FONTS_HREF = (

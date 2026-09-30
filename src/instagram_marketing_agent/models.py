@@ -1,4 +1,4 @@
-"""Pydantic entities. Mirrors specs/001-instagram-story-agent/data-model.md."""
+"""Pydantic entities."""
 
 from __future__ import annotations
 

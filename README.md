@@ -418,12 +418,10 @@ text. It reads correctly at story scale; for a hero packshot, composite the real
 
 Two places where the implementation knowingly differs from the source documents:
 
-1. **Audio transcription model.** `requirements.md` specifies `gemini-3.1-flash-lite-image` for
+1. **Audio transcription model.** `specs/mcp-server.md` specifies `gemini-3.1-flash-lite-image` for
    transcription. That model (Nano Banana 2 Lite) generates images and does not accept audio input, so it
    cannot do the job as written. Substituted Google's dedicated `gemini-3.5-transcribe`.
 
 2. ~~**Fonts.**~~ **Resolved.** Slides render in a headless browser, so the page loads Bitter and Noto Sans
    from Google Fonts and the guidelines' mandated typefaces are used directly. This needs network access at
    render time.
-
-See `specs/001-instagram-marketing-agent/` for the full spec, plan, and research.
