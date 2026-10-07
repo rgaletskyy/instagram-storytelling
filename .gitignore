@@ -31,7 +31,9 @@ service-account*.json
 .DS_Store
 Thumbs.db
 *.swp
-.vscode/
+# Editor settings stay personal, but the debug configurations are shared.
+.vscode/*
+!.vscode/launch.json
 .idea/
 
 # vendored ffmpeg binaries
