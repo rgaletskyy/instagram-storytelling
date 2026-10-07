@@ -62,7 +62,7 @@ async def test_only_collections_at_or_above_the_threshold_are_searched():
     )
     await service.find_similar("шампунь для шпіца")
     assert {c for c, _, _ in firestore.searched} == {PRODUCTS, CONTENT}
-    assert all(v == VECTOR and limit == TOP_K for _, v, limit in firestore.searched)
+    assert all(v == VECTOR and limit == TOP_K[c] for c, v, limit in firestore.searched)
     state, _, options = jev.asked
     assert state == "шампунь для шпіца"
     assert set(options) == {PRODUCTS, INSTAGRAM_MESSAGES, CONTENT}
@@ -103,3 +103,13 @@ async def test_a_classifier_failure_surfaces_as_embedding_error():
     service = SearchService(_Firestore(), _Jev(error=EmbeddingError("down")), _Embedder())
     with pytest.raises(EmbeddingError):
         await service.find_similar("query")
+
+
+async def test_each_collection_returns_its_own_number_of_documents():
+    service, firestore, *_ = _service({PRODUCTS: 0.34, INSTAGRAM_MESSAGES: 0.33, CONTENT: 0.33})
+    await service.find_similar("query")
+    assert {c: limit for c, _, limit in firestore.searched} == {
+        PRODUCTS: 5,
+        INSTAGRAM_MESSAGES: 10,
+        CONTENT: 20,
+    }

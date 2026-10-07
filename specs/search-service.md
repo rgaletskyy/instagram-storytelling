@@ -38,7 +38,7 @@ Behavior:
 - Each list holds documents of its own collection only
 - Must not modify stored documents
 - Use distanceMeasure: "COSINE" in FireStore
-- Incldue distanceResultField, and pick top 5 results with the best match
+- Incldue distanceResultField, and pick the best matches: top 5 products, top 10 instagram messages, top 20 content
 - Documents in each field are sorted by similarity descending
 - Return empty collections if no similar documents
 

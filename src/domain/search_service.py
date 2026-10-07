@@ -20,7 +20,8 @@ from infrastructure.jev_client import JevClient
 from .contracts import Content, InstagramMessage, InvalidArgument, Product, SearchResult
 
 THRESHOLD = 0.3
-TOP_K = 5
+# How many of the closest documents each collection returns.
+TOP_K = {PRODUCTS: 5, INSTAGRAM_MESSAGES: 10, CONTENT: 20}
 
 # The query is the state Jev reads; each collection is an option.
 JEV_INSTRUCTIONS = "Which collection holds the documents that answer this query?"
@@ -70,7 +71,7 @@ class SearchService:
         )
         selected = [c for c in COLLECTION_DESCRIPTIONS if probabilities.get(c, 0.0) >= THRESHOLD]
         hits = await asyncio.gather(
-            *(self._firestore.find_nearest(c, vector, TOP_K) for c in selected)
+            *(self._firestore.find_nearest(c, vector, TOP_K[c]) for c in selected)
         )
 
         result = SearchResult()

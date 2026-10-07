@@ -383,7 +383,7 @@ Two kinds of row are never embedded: Instagram's own notices and placeholders (`
 from domain.search_service import SearchService
 
 result = await SearchService().find_similar("шампунь для шпіца")
-result.products, result.instagram_messages, result.content  # top 5 each, closest first
+result.products, result.instagram_messages, result.content  # top 5 / 10 / 20, closest first
 ```
 
 Jev is asked a single choice question: the query is the state, and each
