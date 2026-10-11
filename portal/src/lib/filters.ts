@@ -7,9 +7,23 @@ export const DEFAULT_CONTENT_TYPE: ContentType = "лайфстайл";
 
 export type SearchFilters = {
   type: ContentType;
-  /** true: only files with a dog. Absent: with or without one. */
+  /** true: only files with a dog. false: only files without one. Absent: either. */
   hasDog?: boolean;
 };
+
+// The portal's dog control. "any" leaves hasDog out of the request, so the
+// API returns files with or without a dog; the other two ask for one or the
+// other.
+export type DogChoice = "any" | "with" | "without";
+export const DOG_CHOICES: { value: DogChoice; label: string }[] = [
+  { value: "any", label: "Any" },
+  { value: "with", label: "With a dog" },
+  { value: "without", label: "Without a dog" },
+];
+
+export function toFilters(type: ContentType, dog: DogChoice): SearchFilters {
+  return dog === "any" ? { type } : { type, hasDog: dog === "with" };
+}
 
 export function isContentType(value: unknown): value is ContentType {
   return typeof value === "string" && (CONTENT_TYPES as readonly string[]).includes(value);

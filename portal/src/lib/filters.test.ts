@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { DEFAULT_CONTENT_TYPE, parseFilters } from "./filters.ts";
+import { DEFAULT_CONTENT_TYPE, parseFilters, toFilters } from "./filters.ts";
 
 test("type defaults to lifestyle and hasDog is left out when not given", () => {
   assert.deepEqual(parseFilters({}), { filters: { type: DEFAULT_CONTENT_TYPE } });
@@ -22,4 +22,10 @@ test("an unknown type or a non-boolean hasDog is refused", () => {
   assert.ok("error" in parseFilters({ type: "lifestyle" }));
   assert.ok("error" in parseFilters({ type: "" }));
   assert.ok("error" in parseFilters({ hasDog: "true" }));
+});
+
+test("the dog control maps to hasDog: any leaves it out, without sends false", () => {
+  assert.deepEqual(toFilters("лайфстайл", "any"), { type: "лайфстайл" });
+  assert.deepEqual(toFilters("лайфстайл", "with"), { type: "лайфстайл", hasDog: true });
+  assert.deepEqual(toFilters("лайфстайл", "without"), { type: "лайфстайл", hasDog: false });
 });

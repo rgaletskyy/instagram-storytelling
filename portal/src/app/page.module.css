@@ -171,47 +171,41 @@
   padding: 6px 10px;
 }
 
-.switch {
-  position: relative;
-  width: 40px;
-  height: 22px;
-  flex: none;
+.segmented {
+  display: inline-flex;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.segmented button {
+  font: inherit;
+  font-size: 0.85rem;
+  padding: 6px 12px;
   border: none;
-  border-radius: 999px;
-  background: var(--border);
+  background: var(--surface);
+  color: var(--text);
   cursor: pointer;
-  padding: 0;
-  transition: background 0.15s;
 }
 
-.switch[aria-checked="true"] {
+.segmented button + button {
+  border-left: 1px solid var(--border);
+}
+
+.segmented button[aria-checked="true"] {
   background: var(--accent);
+  color: var(--accent-text);
 }
 
-.switch:disabled {
+.segmented button:disabled {
   opacity: 0.5;
   cursor: default;
 }
 
-.switch:focus-visible,
+.segmented button:focus-visible,
 .field select:focus-visible {
   outline: 2px solid var(--link);
-  outline-offset: 2px;
-}
-
-.knob {
-  position: absolute;
-  top: 3px;
-  left: 3px;
-  width: 16px;
-  height: 16px;
-  border-radius: 50%;
-  background: var(--surface);
-  transition: transform 0.15s;
-}
-
-.switch[aria-checked="true"] .knob {
-  transform: translateX(18px);
+  outline-offset: -2px;
 }
 
 .filterTag {

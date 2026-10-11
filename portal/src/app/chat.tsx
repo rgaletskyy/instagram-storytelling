@@ -6,8 +6,11 @@ import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from 
 import {
   CONTENT_TYPES,
   DEFAULT_CONTENT_TYPE,
+  DOG_CHOICES,
   isContentType,
+  toFilters,
   type ContentType,
+  type DogChoice,
   type SearchFilters,
 } from "@/lib/filters";
 
@@ -23,8 +26,7 @@ export function Chat() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [query, setQuery] = useState("");
   const [contentType, setContentType] = useState<ContentType>(DEFAULT_CONTENT_TYPE);
-  // Off means with or without a dog, not "without": the switch only narrows.
-  const [withDog, setWithDog] = useState(false);
+  const [dog, setDog] = useState<DogChoice>("any");
   const [busy, setBusy] = useState(false);
   const nextId = useRef(0);
   const bottom = useRef<HTMLDivElement>(null);
@@ -41,9 +43,7 @@ export function Chat() {
     event?.preventDefault();
     const text = query.trim();
     if (!text || busy) return;
-    const filters: SearchFilters = withDog
-      ? { type: contentType, hasDog: true }
-      : { type: contentType };
+    const filters = toFilters(contentType, dog);
     add({ role: "user", text, filters });
     setQuery("");
     setBusy(true);
@@ -109,19 +109,23 @@ export function Chat() {
             ))}
           </select>
         </label>
-        <label className={styles.field}>
-          <button
-            type="button"
-            role="switch"
-            aria-checked={withDog}
-            className={styles.switch}
-            onClick={() => setWithDog((on) => !on)}
-            disabled={busy}
-          >
-            <span className={styles.knob} />
-          </button>
-          With a dog
-        </label>
+        <div className={styles.field}>
+          <span id="dog-label">Dog</span>
+          <div role="radiogroup" aria-labelledby="dog-label" className={styles.segmented}>
+            {DOG_CHOICES.map((choice) => (
+              <button
+                key={choice.value}
+                type="button"
+                role="radio"
+                aria-checked={dog === choice.value}
+                onClick={() => setDog(choice.value)}
+                disabled={busy}
+              >
+                {choice.label}
+              </button>
+            ))}
+          </div>
+        </div>
       </div>
       <form className={styles.composer} onSubmit={send}>
         <textarea
@@ -148,7 +152,8 @@ function MessageView({ message }: { message: Message }) {
         {message.text}
         <span className={styles.filterTag}>
           {message.filters.type}
-          {message.filters.hasDog ? " · with a dog" : ""}
+          {message.filters.hasDog === true && " · with a dog"}
+          {message.filters.hasDog === false && " · without a dog"}
         </span>
       </div>
     );
