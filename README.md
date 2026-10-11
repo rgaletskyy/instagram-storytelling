@@ -437,10 +437,12 @@ The response is `SearchResult` with its contract field names: `products`,
 | 502 | Gemini or Jev failed |
 | 503 | Firestore failed, or Google's signing certificates could not be fetched |
 
-**Who is calling is checked twice.** Cloud Run admits only the portal's
-service account (`--no-allow-unauthenticated`, `roles/run.invoker` for that
-account alone), and the portal gets its token from the metadata server, so no
-secret exists to leak. The API then verifies the user's own Google ID token --
+**Who is calling is checked twice.** Cloud Run admits only two service
+accounts, the portal's and the MCP server's (`--no-allow-unauthenticated`,
+`roles/run.invoker` for those two alone), and both get their tokens from the
+metadata server, so no secret exists to leak. The MCP server, which has no
+user behind it, is admitted on its own verified token through
+`SERVICE_CALLERS`; see `marketing-mcp/README.md`. The API then verifies the user's own Google ID token --
 Google's signature, the portal's OAuth client id as audience -- and checks the
 email against `ALLOWED_USERS`. A forwarded email in a plain header would prove
 nothing. Every call and every refusal is logged as JSON with the user's email.
@@ -464,8 +466,8 @@ uv run uvicorn api.app:create_app --factory --port 8080
 ### Deploying to Cloud Run
 
 **Private by IAM, not by network.** The service has a public URL, but Google's
-front end rejects any request without an ID token for the portal's service
-account before it reaches the container. There is no VPC: the API calls
+front end rejects any request without an ID token for the portal's or the
+MCP server's service account before it reaches the container. There is no VPC: the API calls
 Firestore, Gemini and Jev over the public internet, with TLS and its own
 service account.
 
@@ -497,7 +499,9 @@ gcloud run deploy hd-api --source . --region=$REGION \
   --set-env-vars="^;^USER_TOKEN_AUDIENCE=<portal OAuth client id>;ALLOWED_USERS=<a@x.ua,b@x.ua>" \
   --set-secrets=GEMINI_API_KEY=gemini-api-key:latest,TYPESAFE_API_KEY=typesafe-api-key:latest
 
-# 3. Only the portal may invoke it.
+# 3. Only the portal may invoke it -- and the MCP server, granted in
+#    marketing-mcp/README.md along with SERVICE_CALLERS. The portal's account
+#    must exist first (portal/README.md creates it).
 gcloud run services add-iam-policy-binding hd-api --region=$REGION \
   --member=serviceAccount:$PORTAL_SA --role=roles/run.invoker
 ```
