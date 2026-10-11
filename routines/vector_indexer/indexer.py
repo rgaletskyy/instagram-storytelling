@@ -157,21 +157,34 @@ def _document(doc_id: str, model, embedding_text: str) -> IndexDocument:
     return IndexDocument(doc_id, data)
 
 
+# The SKU column under each catalogue export's own name: the old site export
+# (Russian headers) and the current B2B export (Ukrainian headers). Every other
+# field below likewise names the old column first and the new one after it.
+_SKU_COLUMNS = ("Артикул", "SKU")
+
+
 def read_products(path: Path) -> list[IndexDocument]:
     rows = load_workbook(path, read_only=True).active.iter_rows(values_only=True)
     columns = _columns(next(rows))
+    if not any(name in columns for name in _SKU_COLUMNS):
+        # Otherwise every row reads as having no SKU and the run quietly
+        # indexes nothing.
+        raise ValueError(
+            f"{path.name} has no SKU column ({' or '.join(_SKU_COLUMNS)}); "
+            f"its headers are {sorted(columns)}"
+        )
     docs = []
     for row in rows:
-        sku = _first(row, columns, "Артикул")
+        sku = _first(row, columns, *_SKU_COLUMNS)
         if not sku:
             continue
         product = Product(
             sku=sku,
-            name=_first(row, columns, "Название (UA)", "Название модификации (UA)"),
-            price=_number(_first(row, columns, "Цена")),
-            brand=_first(row, columns, "Бренд"),
-            category=_first(row, columns, "Раздел"),
-            description=_strip_html(_first(row, columns, "Описание товара (UA)")),
+            name=_first(row, columns, "Название модификации (UA)", "Товар/Послуга"),
+            price=_number(_first(row, columns, "Цена", "Ціна")),
+            brand=_first(row, columns, "Бренд", "Виробник"),
+            category=_first(row, columns, "Раздел", "Категорія"),
+            description=_strip_html(_first(row, columns, "Описание товара (UA)", "Опис")),
             volume=_first(row, columns, "Об`єм", "Об'єм"),
             # `Вес` is 0 on every row; the real weight is in `Вага`.
             weight=_first(row, columns, "Вага", "Вес"),

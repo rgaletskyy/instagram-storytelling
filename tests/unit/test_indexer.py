@@ -26,10 +26,10 @@ def _sheet(path, rows):
 
 def test_products_take_the_first_filled_of_repeated_columns(tmp_path):
     path = tmp_path / "products.xlsx"
-    header = ["Артикул", "Название (UA)", "Цена", "Бренд", "Раздел", "Описание товара (UA)",
-              "Вес", "Об`єм", "Розмір", "Вага", "Розмір", "Об'єм"]  # fmt: skip
-    row = ["ND/1", "Бальзам", "295.00", "Natural Dog", "Догляд", "<p><b>Paw</b> &amp; soother</p>",
-           "0", None, None, "75 г", "M", "30мл"]  # fmt: skip
+    header = ["Артикул", "Название (UA)", "Название модификации (UA)", "Цена", "Бренд", "Раздел",
+              "Описание товара (UA)", "Вес", "Об`єм", "Розмір", "Вага", "Розмір", "Об'єм"]  # fmt: skip
+    row = ["ND/1", "Бальзам для лап", "Бальзам 30мл", "295.00", "Natural Dog", "Догляд",
+           "<p><b>Paw</b> &amp; soother</p>", "0", None, None, "75 г", "M", "30мл"]  # fmt: skip
     _sheet(path, [header, row, [None] * len(header)])
 
     (doc,) = read_products(path)
@@ -38,8 +38,33 @@ def test_products_take_the_first_filled_of_repeated_columns(tmp_path):
     assert doc.data["price"] == 295.0
     assert doc.data["description"] == "Paw & soother"
     assert (doc.data["volume"], doc.data["size"], doc.data["weight"]) == ("30мл", "M", "75 г")
-    assert doc.data["embeddingText"].split("\n")[:3] == ["ND/1", "Бальзам", "Natural Dog"]
+    assert doc.data["name"] == "Бальзам 30мл"
+    assert doc.data["embeddingText"].split("\n")[:3] == ["ND/1", "Бальзам 30мл", "Natural Dog"]
     assert "distance" not in doc.data
+
+
+def test_products_read_the_ukrainian_b2b_export(tmp_path):
+    path = tmp_path / "products.xlsx"
+    header = ["ID товару/послуги", "Товар/Послуга", "Виробник", "SKU", "Ціна", "Вага", "Опис",
+              "Категорія"]  # fmt: skip
+    row = ["ND-HS", "Холдер для стіків", "Natural Dog Company", "ND-HS", 120.5, 0.05,
+           "<p>Холдер</p>", "Лапи і кігті"]  # fmt: skip
+    _sheet(path, [header, row])
+
+    (doc,) = read_products(path)
+
+    assert doc.id == "ND-HS"
+    assert (doc.data["name"], doc.data["brand"]) == ("Холдер для стіків", "Natural Dog Company")
+    assert (doc.data["price"], doc.data["weight"]) == (120.5, "0.05")
+    assert (doc.data["description"], doc.data["category"]) == ("Холдер", "Лапи і кігті")
+
+
+def test_products_without_a_sku_column_fail_rather_than_index_nothing(tmp_path):
+    path = tmp_path / "products.xlsx"
+    _sheet(path, [["Назва", "Ціна"], ["Бальзам", 1]])
+
+    with pytest.raises(ValueError, match="no SKU column"):
+        read_products(path)
 
 
 def test_messages_skip_instagram_notices_and_get_stable_ids(tmp_path):
