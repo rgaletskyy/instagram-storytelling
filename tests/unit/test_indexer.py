@@ -182,3 +182,20 @@ async def test_the_indexer_pauses_between_chunks_but_not_after_the_last(
     )
 
     assert sleeps == [indexer.CHUNK_DELAY] * expected
+
+
+@pytest.mark.parametrize(
+    ("breed", "tags", "expected"),
+    [
+        ("шпіц", "", True),
+        ("шпіц", "без тварини", True),
+        ("", "Собака, лапа, біла шерсть", True),
+        ("", "засіб, догляд за собаками", False),
+        ("", "собака, догляд за собакою, без тварини", False),
+        ("", "собака відсутня, пляшка", False),
+        ("", "кіт, диван", False),
+        ("", "", False),
+    ],
+)
+def test_a_dog_comes_from_the_breed_or_an_exact_dog_tag(breed, tags, expected):
+    assert indexer._has_dog(breed, tags) is expected

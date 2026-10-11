@@ -63,6 +63,21 @@ _DM_PLACEHOLDER = re.compile(r"^\[[^\]]+\]$")
 # already the next morning in Kyiv, and would split one evening's chat in two.
 _DM_TIMEZONE = ZoneInfo("Europe/Kyiv")
 
+# A file shows a dog when a breed was recognised, or failing that when one of
+# its tags is exactly "собака". Exactly: "собака" is also inside "догляд за
+# собаками", a topic tag on hundreds of files with no dog in frame. And not
+# when another tag says there is no animal, which the describer sometimes adds
+# beside "собака" on product shots.
+_DOG_TAG = "собака"
+_NO_DOG_TAGS = {
+    "без тварини",
+    "без тварин",
+    "без собаки",
+    "немає собаки",
+    "собака відсутня",
+    "відсутній собака",
+}
+
 
 @dataclass(frozen=True)
 class IndexSummary:
@@ -224,6 +239,13 @@ def _link(cell) -> str:
     return text if text.startswith("http") else ""
 
 
+def _has_dog(breed: str, tags: str) -> bool:
+    if breed:
+        return True
+    tag_set = {tag.strip().lower() for tag in tags.split(",")}
+    return _DOG_TAG in tag_set and not tag_set & _NO_DOG_TAGS
+
+
 def read_content(path: Path) -> list[IndexDocument]:
     # Not read-only: hyperlinks are only loaded in the full mode.
     sheet = load_workbook(path).active
@@ -260,7 +282,7 @@ def read_content(path: Path) -> list[IndexDocument]:
             type=value(row, "Тип"),
             text_on_image=value(row, "Текст на фото"),
             size_kb=_number(value(row, "Розмір, KB")),
-            has_dog=bool(value(row, "Порода")),
+            has_dog=_has_dog(value(row, "Порода"), value(row, "Теги")),
         )
         text = _embedding_text(
             content.description,
