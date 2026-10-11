@@ -31,12 +31,21 @@ USER_TOKEN_HEADER = "X-User-Token"
 AUDIENCE_ENV = "USER_TOKEN_AUDIENCE"
 # Emails allowed to call the API, comma-separated.
 ALLOWED_USERS_ENV = "ALLOWED_USERS"
+# Service accounts allowed to call with no user behind them -- the MCP server,
+# which acts for an AI assistant rather than for a signed-in person. Optional:
+# unset, every call needs a user token.
+SERVICE_CALLERS_ENV = "SERVICE_CALLERS"
+# The audience those accounts' ID tokens carry: this API's own URL.
+# Comma-separated, since a Cloud Run service answers on more than one URL.
+SERVICE_AUDIENCE_ENV = "SERVICE_TOKEN_AUDIENCE"
 
 
 @dataclass(frozen=True)
 class AuthSettings:
     audiences: tuple[str, ...]
     allowed_users: frozenset[str]
+    service_callers: frozenset[str] = frozenset()
+    service_audiences: tuple[str, ...] = ()
 
     @classmethod
     def from_env(cls) -> AuthSettings:
@@ -51,12 +60,23 @@ class AuthSettings:
         ]
         if missing:
             raise RuntimeError(f"API auth is not configured: set {', '.join(missing)}")
-        return cls(audiences, allowed)
+        callers = frozenset(e.lower() for e in _split(os.environ.get(SERVICE_CALLERS_ENV, "")))
+        service_audiences = tuple(_split(os.environ.get(SERVICE_AUDIENCE_ENV, "")))
+        # Half a configuration would let a service in with no audience check,
+        # or name accounts that could never get in.
+        if bool(callers) != bool(service_audiences):
+            raise RuntimeError(
+                f"set both {SERVICE_CALLERS_ENV} and {SERVICE_AUDIENCE_ENV}, or neither"
+            )
+        return cls(audiences, allowed, callers, service_audiences)
 
 
 @dataclass(frozen=True)
 class User:
+    """Who acted: a signed-in person, or a service account calling for itself."""
+
     email: str
+    is_service: bool = False
 
 
 def _split(value: str) -> list[str]:
@@ -90,11 +110,19 @@ def _unauthorized(detail: str) -> HTTPException:
 async def current_user(
     request: Request,
     x_user_token: Annotated[str | None, Header(alias=USER_TOKEN_HEADER)] = None,
+    authorization: Annotated[str | None, Header()] = None,
 ) -> User:
-    """FastAPI dependency: the verified, allowlisted user, or 401 / 403."""
-    if not x_user_token:
-        raise _unauthorized(f"missing {USER_TOKEN_HEADER}")
+    """FastAPI dependency: the verified, allowlisted caller, or 401 / 403.
+
+    A user token, when sent, decides: the portal always acts for a person.
+    Without one, the caller's own service token is checked against
+    SERVICE_CALLERS -- but only when that list is configured.
+    """
     settings: AuthSettings = request.app.state.auth
+    if not x_user_token:
+        if settings.service_callers and authorization:
+            return await _service_caller(authorization, settings)
+        raise _unauthorized(f"missing {USER_TOKEN_HEADER}")
     try:
         # Blocking: fetches Google's signing certificates over HTTP.
         claims = await asyncio.to_thread(verify_google_id_token, x_user_token, settings.audiences)
@@ -111,3 +139,30 @@ async def current_user(
     if email not in settings.allowed_users:
         raise _refuse(status.HTTP_403_FORBIDDEN, f"{email} is not allowed", email)
     return User(email=email)
+
+
+async def _service_caller(authorization: str, settings: AuthSettings) -> User:
+    """The service account behind a Bearer ID token, if it may call without a user.
+
+    Cloud Run has already checked this token before the request got here; it
+    is verified again so the API does not rest on how the service is deployed.
+    """
+    scheme, _, token = authorization.partition(" ")
+    if scheme.lower() != "bearer" or not token:
+        raise _unauthorized(f"missing {USER_TOKEN_HEADER}")
+    try:
+        claims = await asyncio.to_thread(
+            verify_google_id_token, token.strip(), settings.service_audiences
+        )
+    except TransportError as exc:
+        raise _refuse(
+            status.HTTP_503_SERVICE_UNAVAILABLE, f"cannot verify the caller now: {exc}"
+        ) from exc
+    except (ValueError, GoogleAuthError) as exc:
+        raise _unauthorized(f"invalid service token: {exc}") from exc
+    email = str(claims.get("email", "")).lower()
+    if not email or claims.get("email_verified") is not True:
+        raise _unauthorized("service token carries no verified email")
+    if email not in settings.service_callers:
+        raise _refuse(status.HTTP_403_FORBIDDEN, f"{email} may not call without a user", email)
+    return User(email=email, is_service=True)

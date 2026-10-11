@@ -148,3 +148,31 @@ async def test_an_unknown_type_is_rejected_before_any_call(content_type):
     with pytest.raises(InvalidArgument, match="type"):
         await service.find_similar("q", content_type=content_type)
     assert jev.asked is None and embedder.queries == [] and firestore.searched == []
+
+
+async def test_a_sku_narrows_products_and_nothing_else():
+    service, firestore, *_ = _service(ALL)
+    await service.find_similar("бальзам", product_sku=" ND-PAWS-01 ")
+    assert firestore.filters[PRODUCTS] == {"sku": "ND-PAWS-01"}
+    assert firestore.filters[INSTAGRAM_MESSAGES] is None
+    assert firestore.filters[CONTENT] == {"type": DEFAULT_CONTENT_TYPE}
+
+
+@pytest.mark.parametrize("sku", [None, "", "   "])
+async def test_no_sku_leaves_products_unfiltered(sku):
+    service, firestore, *_ = _service(ALL)
+    await service.find_similar("бальзам", product_sku=sku)
+    assert firestore.filters[PRODUCTS] is None
+
+
+async def test_a_sku_has_products_searched_even_when_jev_leaves_them_out():
+    service, firestore, *_ = _service({PRODUCTS: 0.05, CONTENT: 0.95})
+    await service.find_similar("фото для сторіз", product_sku="ND-PAWS-01")
+    assert {c for c, _, _ in firestore.searched} == {PRODUCTS, CONTENT}
+    assert firestore.filters[PRODUCTS] == {"sku": "ND-PAWS-01"}
+
+
+async def test_without_a_sku_jev_still_decides_on_products():
+    service, firestore, *_ = _service({PRODUCTS: 0.05, CONTENT: 0.95})
+    await service.find_similar("фото для сторіз", product_sku="  ")
+    assert {c for c, _, _ in firestore.searched} == {CONTENT}

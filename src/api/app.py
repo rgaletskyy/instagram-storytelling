@@ -35,6 +35,8 @@ class SearchRequest(BaseModel):
     # one type. Ignored by products and messages.
     has_dog: bool | None = Field(default=None, alias="hasDog")
     content_type: str = Field(default=DEFAULT_CONTENT_TYPE, alias="type")
+    # Narrow products to this one SKU. Ignored by content and messages.
+    product_sku: str | None = Field(default=None, alias="productSku")
 
 
 class _CloudLoggingFormatter(logging.Formatter):
@@ -57,7 +59,7 @@ def _configure_logging() -> None:
 
 
 def create_app(search_service: SearchService | None = None) -> FastAPI:
-    from instagram_marketing_agent.config import load_dotenv
+    from infrastructure.env import load_dotenv
 
     load_dotenv()
     _configure_logging()
@@ -77,13 +79,18 @@ def create_app(search_service: SearchService | None = None) -> FastAPI:
         started = time.perf_counter()
         fields = {
             "user": user.email,
+            "caller": "service" if user.is_service else "user",
             "action": "searchcontext",
             "hasDog": body.has_dog,
             "type": body.content_type,
+            "productSku": body.product_sku,
         }
         try:
             result = await app.state.search.find_similar(
-                body.query, has_dog=body.has_dog, content_type=body.content_type
+                body.query,
+                has_dog=body.has_dog,
+                content_type=body.content_type,
+                product_sku=body.product_sku,
             )
         except InvalidArgument as exc:
             _log(logging.INFO, "rejected", fields, started, status=400)

@@ -1,0 +1,31 @@
+[project]
+name = "marketing-mcp"
+version = "0.1.0"
+description = "MCP server for HealthyDoggo's SMM managers: search the content knowledge base."
+requires-python = ">=3.11"
+dependencies = [
+    "fastmcp>=4.1.0",
+    "google-auth>=2.61.0",
+    "httpx>=0.28.1",
+    "py-key-value-aio[firestore,wrappers-encryption]>=0.4.6",
+    "requests>=2.34.2",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.1.1",
+    "pytest-asyncio>=1.4.0",
+    "ruff>=0.17.0",
+]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+asyncio_mode = "auto"
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]
+ignore = ["E501"]

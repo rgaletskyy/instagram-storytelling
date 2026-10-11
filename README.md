@@ -401,14 +401,15 @@ one Jev is torn over can search two or all three.
 POST /searchcontext
 Authorization: Bearer <ID token for the portal's service account>   -- checked by Cloud Run
 X-User-Token:  <the signed-in user's Google ID token>              -- checked by the API
-{"query": "шампунь для шпіца", "hasDog": true, "type": "лайфстайл"}
+{"query": "шампунь для шпіца", "hasDog": true, "type": "лайфстайл", "productSku": "ND-PAWS-01"}
 ```
 
 `hasDog` and `type` narrow the content results only. `type` is one of
 `лайфстайл`, `креатив`, `продуктове` and defaults to `лайфстайл`; `hasDog`
 asks for files with a dog (`true`), without one (`false`), or either when left
-out. Both are Firestore pre-filters, so content search needs two extra vector
-indexes, one per combination of filter fields:
+out. `productSku`, also optional, narrows the products to that exact SKU.
+All three are Firestore pre-filters, and each combination of filter fields
+needs its own vector index -- two on content, one on products:
 
 ```bash
 for fields in type type,hasDog; do
@@ -418,6 +419,10 @@ for fields in type type,hasDog; do
     --collection-group=content --query-scope=COLLECTION "${configs[@]}" \
     --field-config='field-path=embeddingVector,vector-config={"dimension":"1536","flat":"{}"}'
 done
+gcloud firestore indexes composite create --database=healthydoggo \
+  --collection-group=products --query-scope=COLLECTION \
+  --field-config=order=ASCENDING,field-path=sku \
+  --field-config='field-path=embeddingVector,vector-config={"dimension":"1536","flat":"{}"}'
 ```
 
 The response is `SearchResult` with its contract field names: `products`,
@@ -447,6 +452,8 @@ Settings (the app will not start without the first two):
 | `USER_TOKEN_AUDIENCE` | the portal's Google OAuth client id; comma-separated for more than one |
 | `ALLOWED_USERS` | emails allowed to call, comma-separated |
 | `GEMINI_API_KEY`, `TYPESAFE_API_KEY` | as for the indexer; from Secret Manager on Cloud Run |
+| `SERVICE_CALLERS` | optional: service accounts that may call **without** a user token, comma-separated -- the MCP server (`marketing-mcp/`). Their ID token is verified and they are logged as the caller |
+| `SERVICE_TOKEN_AUDIENCE` | the API's own URL(s), the audience those service tokens carry. Set with `SERVICE_CALLERS` or not at all |
 
 Run it locally:
 

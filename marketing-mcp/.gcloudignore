@@ -1,0 +1,2 @@
+# What `gcloud run deploy --source marketing-mcp` leaves out of the upload.
+#!include:.dockerignore

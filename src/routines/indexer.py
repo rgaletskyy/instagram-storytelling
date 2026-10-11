@@ -383,7 +383,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--dir", type=Path, default=INDICES_DIR, help="folder of the spreadsheets")
     args = parser.parse_args(argv)
 
-    from instagram_marketing_agent.config import load_dotenv
+    from infrastructure.env import load_dotenv
 
     load_dotenv()
     logging.basicConfig(level=logging.INFO, format="%(message)s")

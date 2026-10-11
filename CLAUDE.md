@@ -54,7 +54,7 @@ Separate from campaigns. Reads `src/resources/images_index/index_inventory.xlsx`
 
 ### Product search / RAG (`src/infrastructure`, `src/domain`, `src/routines`)
 
-Separate top-level packages, not part of `instagram_marketing_agent`; layout follows the "Code structure" section of `specs/marketing-rag.md`, behaviour follows `specs/search-service.md`. `routines/indexer.py` (`uv run rag-index`) embeds the spreadsheets in `src/resources/indices/` into the Firestore database `healthydoggo`; `domain.search_service.SearchService.find_similar` asks TypeSafe's Jev one `choice` question with each collection as an option (probability threshold 0.3; probabilities sum to 1, so a query searches one to three collections), then runs a cosine `find_nearest` on each selected collection, content pre-filtered by `type` and optional `hasDog` (equality only, each filter combination needs its own composite vector index) (top 5 products, 10 messages, 15 content: `TOP_K`). Errors are the spec's `InvalidArgument` / `EmbeddingError` / `DataSourceError` in `domain/contracts.py`, raised by the clients. Embeddings are 1536-d (Firestore caps vector indexes at 2048), and gemini-embedding-2 takes query/document prefixes in the text instead of `task_type`.
+Separate top-level packages, not part of `instagram_marketing_agent`; layout follows the "Code structure" section of `specs/marketing-rag.md`, behaviour follows `specs/search-service.md`. `routines/indexer.py` (`uv run rag-index`) embeds the spreadsheets in `src/resources/indices/` into the Firestore database `healthydoggo`; `domain.search_service.SearchService.find_similar` asks TypeSafe's Jev one `choice` question with each collection as an option (probability threshold 0.3; probabilities sum to 1, so a query searches one to three collections), then runs a cosine `find_nearest` on each selected collection, content pre-filtered by `type` and optional `hasDog`, products by optional `productSku` (equality only, each filter combination needs its own composite vector index) (top 5 products, 10 messages, 15 content: `TOP_K`). Errors are the spec's `InvalidArgument` / `EmbeddingError` / `DataSourceError` in `domain/contracts.py`, raised by the clients. Embeddings are 1536-d (Firestore caps vector indexes at 2048), and gemini-embedding-2 takes query/document prefixes in the text instead of `task_type`.
 
 ### Search API (`src/api`)
 
@@ -63,6 +63,10 @@ FastAPI over `SearchService`, spec `specs/search-api.md`. Built by a factory: `u
 ### Marketing portal (`portal/`)
 
 Separate Next.js 16 app (npm, not uv), spec `specs/marketing-portal.md`; its own `portal/AGENTS.md` says to read the bundled docs in `portal/node_modules/next/dist/docs/` before writing Next.js code. NextAuth v4 with Google, allowlist `ALLOWED_USERS`; the JWT session cookie holds the user's Google ID token + refresh token, kept out of the `session` callback so the browser never sees them. `/api/search` (route handler) is the only path to the API: it adds `X-User-Token` and, when `API_AUDIENCE` is set, a metadata-server service token. Commands (in `portal/`): `npm run dev`, `npm test` (node:test on `src/lib/*.test.ts`), `npm run typecheck`, `npm run lint`, `npm run build`.
+
+### Marketing MCP (`marketing-mcp/`)
+
+Separate uv project (own `pyproject.toml`, `uv.lock`, `Dockerfile`), spec `specs/marketing-mcp.md`. FastMCP 4 server in `src/mcp-server.py` (hyphenated, so run as a script: `uv run python src/mcp-server.py`; tests load it by path), tools under `src/tools/`. `search_knowledge_base` calls the search API over HTTP as its own service account (metadata-server ID token when `API_AUDIENCE` is set) with no user token; the API admits it through `SERVICE_CALLERS`. Run tests from `marketing-mcp/`: `uv run pytest`.
 
 ## Local-only data
 

@@ -68,12 +68,15 @@ class SearchService:
         query: str,
         has_dog: bool | None = None,
         content_type: str = DEFAULT_CONTENT_TYPE,
+        product_sku: str | None = None,
     ) -> SearchResult:
         """Documents close to `query`.
 
         `has_dog` and `content_type` narrow the content collection only: to
         files with (True) or without (False) a dog in them -- any, when None --
-        and of the one type given. Products and messages have neither field.
+        and of the one type given. `product_sku` narrows the products to the
+        one with that exact SKU, and has products searched even when Jev
+        would leave them out. Messages are never filtered.
         """
         if not query or not query.strip():
             raise InvalidArgument("query must not be empty")
@@ -84,13 +87,22 @@ class SearchService:
         filters = {CONTENT: {"type": content_type}}
         if has_dog is not None:
             filters[CONTENT]["hasDog"] = has_dog
+        # A blank SKU is no SKU, not a filter that matches nothing.
+        if product_sku and product_sku.strip():
+            filters[PRODUCTS] = {"sku": product_sku.strip()}
 
         # Independent calls: classify and embed side by side.
         probabilities, vector = await asyncio.gather(
             self._jev.choice_probabilities(query, JEV_INSTRUCTIONS, COLLECTION_DESCRIPTIONS),
             self._embedder.embed_query(query),
         )
-        selected = [c for c in COLLECTION_DESCRIPTIONS if probabilities.get(c, 0.0) >= THRESHOLD]
+        # A SKU names the product outright, so its collection is searched
+        # whatever Jev makes of the wording; Jev still decides the others.
+        selected = [
+            c
+            for c in COLLECTION_DESCRIPTIONS
+            if probabilities.get(c, 0.0) >= THRESHOLD or (c == PRODUCTS and PRODUCTS in filters)
+        ]
         hits = await asyncio.gather(
             *(self._firestore.find_nearest(c, vector, TOP_K[c], filters.get(c)) for c in selected)
         )

@@ -28,6 +28,8 @@ Input:
 - type: string, required
   - type of content to filter. one of `лайфстайл`, `креатив`, `продуктове`
   - must not be empty. default to `лайфстайл`
+- productSku: string, optional
+  - sku of product to filter products
   
 Output:
 - SearchResult
@@ -40,6 +42,7 @@ Errors:
 Behavior:
 - Query is embedded with the same model and dimension as the indexed documents (`gemini-embedding-2`, 1536)
 - A collection is searched only if its classifier probability is >= 0.3
+- When productSku is present, products are always searched, whatever their probability
 - A collection that is not searched, or has no matches, yields an empty list, never null
 - Each list holds documents of its own collection only
 - Must not modify stored documents

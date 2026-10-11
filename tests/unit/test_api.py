@@ -24,7 +24,14 @@ TOKENS = {
     "good": {"email": "Anna@HealthyDoggo.ua", "email_verified": True},
     "stranger": {"email": "eve@example.com", "email_verified": True},
     "unverified": {"email": ALLOWED, "email_verified": False},
+    "mcp-service": {"email": "hd-mcp@project.iam.gserviceaccount.com", "email_verified": True},
+    "portal-service": {
+        "email": "hd-portal@project.iam.gserviceaccount.com",
+        "email_verified": True,
+    },
 }
+MCP_SA = "hd-mcp@project.iam.gserviceaccount.com"
+API_URL = "https://hd-api.example.run.app"
 
 
 class _Search:
@@ -34,9 +41,11 @@ class _Search:
         self.queries = []
         self.calls = []
 
-    async def find_similar(self, query, has_dog=None, content_type="лайфстайл"):
+    async def find_similar(self, query, has_dog=None, content_type="лайфстайл", product_sku=None):
         self.queries.append(query)
-        self.calls.append({"has_dog": has_dog, "content_type": content_type})
+        self.calls.append(
+            {"has_dog": has_dog, "content_type": content_type, "product_sku": product_sku}
+        )
         if self.error:
             raise self.error
         return self.result
@@ -157,17 +166,91 @@ def test_has_dog_and_type_reach_the_service(configured):
     with _client(search) as client:
         response = _post(client, body={"query": "шпіц", "hasDog": True, "type": "креатив"})
     assert response.status_code == 200
-    assert search.calls == [{"has_dog": True, "content_type": "креатив"}]
+    assert search.calls == [{"has_dog": True, "content_type": "креатив", "product_sku": None}]
 
 
 def test_has_dog_and_type_default_to_any_dog_and_lifestyle(configured):
     search = _Search()
     with _client(search) as client:
         _post(client, body={"query": "шпіц"})
-    assert search.calls == [{"has_dog": None, "content_type": "лайфстайл"}]
+    assert search.calls == [{"has_dog": None, "content_type": "лайфстайл", "product_sku": None}]
 
 
 def test_a_non_boolean_has_dog_is_rejected(configured):
     with _client(_Search()) as client:
         response = _post(client, body={"query": "шпіц", "hasDog": "maybe"})
     assert response.status_code == 422
+
+
+def test_product_sku_reaches_the_service(configured):
+    search = _Search()
+    with _client(search) as client:
+        response = _post(client, body={"query": "бальзам", "productSku": "ND-PAWS-01"})
+    assert response.status_code == 200
+    assert search.calls[0]["product_sku"] == "ND-PAWS-01"
+
+
+@pytest.fixture
+def service_callers(configured, monkeypatch):
+    monkeypatch.setenv(auth.SERVICE_CALLERS_ENV, MCP_SA.upper())
+    monkeypatch.setenv(auth.SERVICE_AUDIENCE_ENV, API_URL)
+    return configured
+
+
+def _post_as_service(client, bearer, body=None):
+    return client.post(
+        "/searchcontext",
+        json=body or {"query": "бальзам"},
+        headers={"Authorization": f"Bearer {bearer}"},
+    )
+
+
+def test_an_allowlisted_service_account_may_search_without_a_user(service_callers, capsys):
+    search = _Search()
+    with _client(search) as client:
+        response = _post_as_service(client, "mcp-service")
+    assert response.status_code == 200
+    assert search.queries == ["бальзам"]
+    # Checked against this API's own URL, not the portal's OAuth client.
+    assert service_callers[-1] == (API_URL,)
+    logged = [json.loads(line) for line in capsys.readouterr().out.splitlines() if line]
+    searched = next(line for line in logged if line["message"] == "searched")
+    assert searched["user"] == MCP_SA and searched["caller"] == "service"
+
+
+@pytest.mark.parametrize(
+    ("bearer", "code"), [("portal-service", 403), ("forged", 401), ("offline", 503)]
+)
+def test_other_service_tokens_are_refused(service_callers, bearer, code):
+    search = _Search()
+    with _client(search) as client:
+        response = _post_as_service(client, bearer)
+    assert response.status_code == code
+    assert search.queries == []
+
+
+def test_without_service_callers_configured_a_user_token_is_required(configured):
+    search = _Search()
+    with _client(search) as client:
+        response = _post_as_service(client, "mcp-service")
+    assert response.status_code == 401
+    assert search.queries == []
+
+
+def test_a_user_token_takes_precedence_over_the_service_token(service_callers):
+    search = _Search()
+    with _client(search) as client:
+        response = client.post(
+            "/searchcontext",
+            json={"query": "q"},
+            headers={auth.USER_TOKEN_HEADER: "stranger", "Authorization": "Bearer mcp-service"},
+        )
+    assert response.status_code == 403
+    assert search.queries == []
+
+
+@pytest.mark.parametrize("only", [auth.SERVICE_CALLERS_ENV, auth.SERVICE_AUDIENCE_ENV])
+def test_half_a_service_configuration_refuses_to_start(configured, monkeypatch, only):
+    monkeypatch.setenv(only, "x")
+    with pytest.raises(RuntimeError, match="or neither"):
+        api_app.create_app(search_service=_Search())

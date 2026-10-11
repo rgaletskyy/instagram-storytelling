@@ -13,6 +13,7 @@ Python FastAPI library
 ID token on every call (the metadata server mints it, no secret anywhere)
 user identity forwarded and re-checked API-side, so the API logs who acted, not just "the dashboard"
 Firestore reached with a roles/datastore.user service account
+Service accounts listed in SERVICE_CALLERS (the marketing MCP server) may call without a user token: their own ID token is verified and they are logged as the caller
 
 # Endpoints
 
@@ -22,7 +23,7 @@ Firestore reached with a roles/datastore.user service account
 ### Request
 
 POST /searchcontext
-Body: {query: "", hasDog: true | false (optional), type: "лайфстайл" | "креатив" | "продуктове" (default "лайфстайл")}
+Body: {query: "", hasDog: true | false (optional), type: "лайфстайл" | "креатив" | "продуктове" (default "лайфстайл"), productSku: "" (optional)}
 
 ### Response
 
