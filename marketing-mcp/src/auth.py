@@ -15,7 +15,9 @@ Run instances (a sign-in may start on one and finish on another).
 
 from __future__ import annotations
 
+import json
 import os
+import sys
 
 from fastmcp.server.auth.auth import AccessToken
 from fastmcp.server.auth.providers.google import GoogleProvider
@@ -36,9 +38,26 @@ def parse_allowlist(value: str | None) -> frozenset[str]:
     return frozenset(e.strip().lower() for e in (value or "").split(",") if e.strip())
 
 
-def is_allowed(claims: dict, allowlist: frozenset[str]) -> bool:
+def _verified(value: object) -> bool:
+    # Google's tokeninfo endpoint, which FastMCP reads, sends the flag as the
+    # string "true"; its userinfo endpoint sends a boolean.
+    return value is True or (isinstance(value, str) and value.lower() == "true")
+
+
+def refusal(claims: dict, allowlist: frozenset[str]) -> str | None:
+    """Why this account may not use the server, or None if it may."""
     email = str(claims.get("email") or "").lower()
-    return bool(email) and claims.get("email_verified") is True and email in allowlist
+    if not email:
+        return "no email in the Google token"
+    if not _verified(claims.get("email_verified")):
+        return "email not verified by Google"
+    if email not in allowlist:
+        return "email not in ALLOWED_USERS"
+    return None
+
+
+def is_allowed(claims: dict, allowlist: frozenset[str]) -> bool:
+    return refusal(claims, allowlist) is None
 
 
 class AllowlistedGoogleProvider(GoogleProvider):
@@ -50,7 +69,24 @@ class AllowlistedGoogleProvider(GoogleProvider):
 
     async def load_access_token(self, token: str) -> AccessToken | None:
         access = await super().load_access_token(token)
-        if access is None or not is_allowed(access.claims or {}, self._allowlist):
+        if access is None:
+            return None
+        claims = access.claims or {}
+        reason = refusal(claims, self._allowlist)
+        if reason:
+            # Logged, so a refused sign-in shows up as more than a bare 401.
+            print(
+                json.dumps(
+                    {
+                        "severity": "WARNING",
+                        "message": "sign-in refused",
+                        "user": claims.get("email"),
+                        "reason": reason,
+                    }
+                ),
+                file=sys.stderr,
+                flush=True,
+            )
             return None
         return access
 

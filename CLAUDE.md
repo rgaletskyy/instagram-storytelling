@@ -2,74 +2,65 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Layout
+
+Three live parts, each with its own toolchain, all serving HealthyDoggo's SMM managers:
+
+| Part | Where | Toolchain | Spec |
+|---|---|---|---|
+| Product search (RAG) + Search API | `src/infrastructure`, `src/domain`, `src/routines`, `src/api` | uv, repo root | `specs/marketing-rag.md`, `search-service.md`, `search-api.md` |
+| Marketing portal | `portal/` | npm (Next.js 16) | `specs/marketing-portal.md` |
+| Marketing MCP | `marketing-mcp/` | separate uv project | `specs/marketing-mcp.md` |
+
+`src/instagram_marketing_agent/` is **legacy and currently broken**: `config.py`, `products.py`, `server.py` and `authorize_drive.py` were deleted (commit 087df61) along with its tests, but the remaining modules (`workflow.py`, `llm/`, `slide_html.py`, `image_index.py`, `cli.py`, …) still import them, so the package does not import and the `instagram-marketing-agent`, `image-index` and `authorize-drive` scripts in `pyproject.toml` fail. Much of README.md still documents it. Treat it as reference material for the MCP's planned image/slide tools, not as runnable code.
+
 ## Commands
 
 ```bash
-uv sync --extra dev                 # install, incl. pytest/ruff
-uv run playwright install chromium  # slides are rendered in headless Chromium
-
-uv run pytest                                   # all tests
-uv run pytest -m unit                           # no network
-uv run pytest tests/unit/test_workflow.py::test_name
+# repo root: RAG + API
+uv sync --extra dev
+uv run pytest                                   # tests/unit only has RAG/API tests now
+uv run pytest tests/unit/test_api.py::test_name
 uv run ruff check . && uv run ruff format .
+uv run rag-index                                # embed src/resources/indices/ into Firestore
+uv run uvicorn api.app:create_app --factory     # search API
 
-uv run instagram-marketing-agent --slides 5     # story campaign from content/input/
-uv run python -m instagram_marketing_agent.server  # MCP server over stdio
-uv run image-index --limit 1                    # catalogue the Drive image library
-uv run authorize-drive                          # mint GOOGLE_OAUTH_REFRESH_TOKEN
+# marketing-mcp/ (run from that directory)
+uv sync && uv run pytest
+uv run python src/mcp-server.py                       # HTTP on :8080/mcp, needs auth env
+MCP_TRANSPORT=stdio uv run python src/mcp-server.py   # local client, no auth
+
+# portal/
+npm run dev | npm test | npm run typecheck | npm run lint | npm run build
 ```
 
-Pytest markers (`pyproject.toml`): `unit`, `contract`, `integration` (live credentials + real Drive), `slow` (real image generation). Test modules set `pytestmark` at the top. `asyncio_mode = "auto"`, so async tests need no decorator.
-
-Needs `ANTHROPIC_API_KEY` and `GEMINI_API_KEY` in `.env` (loaded by `config.load_dotenv`, no python-dotenv dependency). ffmpeg only for video; it is found on `PATH` or in the gitignored `.tools/`.
+Root pytest: markers `unit`, `contract`, `integration`, `slow` (`pyproject.toml`); test modules set `pytestmark` at the top; `asyncio_mode = "auto"` in both Python projects. Local settings come from `.env`, read by `infrastructure/env.py` (no python-dotenv; real env vars win, no-op on Cloud Run).
 
 ## Architecture
 
-Package `src/instagram_marketing_agent/`. Three entry surfaces share one implementation:
-
-- `workflow.py` — all pipeline logic (campaigns, lifestyle sets, `verify_content`, `regenerate_slide`).
-- `server.py` — MCP server built on `mcp.server.MCPServer` (SDK v2; `fastmcp` does not exist there). Registration and marshalling only. Anticipated exceptions (`ValueError`, `FileNotFoundError`, `RuntimeError`, `FFmpegMissingError`) are converted to `ToolError` by `_reporting` so the client sees the message.
-- `client.py` (MCP client) and `cli.py` (console script).
-
-`config.py` holds every path, model ID, format/artboard constant and env var name — keep magic values there.
-
-`llm/` is a package with a single import surface (`llm/__init__.py`). Callers use `llm.generate_script(...)` etc., and tests monkeypatch attributes on `llm` itself (`monkeypatch.setattr(llm, "generate_image", fake)`), so **workflow code must call through `llm.<name>`, not import the function directly**, or patches stop applying. Underscored names are re-exported with the redundant `as` form deliberately. Claude does understanding/writing (typed outputs); Gemini does image generation and transcription; `describe` alone can be routed to DeepSeek via `DESCRIBE_MODEL` (`llm/deepseek.py`).
-
-### Campaign pipeline (`workflow.create_campaign`)
-
-brief (`content/input/topic.md`) → SKUs extracted and looked up in `products.xlsx` (`products.py`) → project dir created in `content/output/` → input images/videos described (video: ffmpeg frames + transcript written under `<project>/source/`) → `llm.generate_script` → per slide in parallel: Gemini background with reference photos attached, then Claude lays out HTML over it (`slide_html.py`) and Playwright screenshots it → whole finished set reviewed together (`verify_content`) → slides with *issues* re-laid-out over the same background (`fix_flagged_slides`) → `script.json` saved. Story and post formats run the identical pipeline; only `CanvasFormat` differs. Lifestyle (`create_lifestyle_content`) reuses the building blocks but stops at images — no copy, no layout pass.
-
-Slide failures are collected rather than aborting the campaign; a failed review is logged and the slides are kept.
-
-### Rules that drive design decisions
-
-- **Subjects come from photographs, not words.** Image prompts describe the scene only — never breed, coat, clothing or label text. Appearance comes from attached reference photos; the catalogue packshot always wins for packaging (`product_references`, `subject_references`, `_guard_prompts`).
-- **Skip rather than invent.** A lifestyle product with no obtainable packshot is skipped and reported; a DeepSeek describe reply that won't parse fails the run rather than dropping reference flags.
-- **One `cast` per set** — a single person description carried into every human-featuring prompt and enforced by the verifier.
-- Brand/design rules are data, not code: `src/resources/slide-design-guidelines.md`, `smm_composition_rules.md`, `lifestyle-content-brief.md` are fed into prompts. Decorative PNGs in `src/resources/png/` are tinted into `.decor-cache/` in Python (headless Chromium doesn't render `mask-image`).
-
-### Image library indexer (`image_index.py`, `drive.py`, `authorize_drive.py`)
-
-Separate from campaigns. Reads `src/resources/images_index/index_inventory.xlsx` (sheet `Повний список`; the Drive link is the cell's hyperlink, the text is just "Відкрити"), downloads and describes each image/video, and writes `images_index.xlsx` in Ukrainian. Resumable and additive — saved every 10 rows, already-indexed detection is by filename only. Video uploads screenshots to a Drive folder beside the clip, which needs OAuth credentials (`GOOGLE_OAUTH_*` in `.env`); see README for the Google Cloud setup.
-
 ### Product search / RAG (`src/infrastructure`, `src/domain`, `src/routines`)
 
-Separate top-level packages, not part of `instagram_marketing_agent`; layout follows the "Code structure" section of `specs/marketing-rag.md`, behaviour follows `specs/search-service.md`. `routines/indexer.py` (`uv run rag-index`) embeds the spreadsheets in `src/resources/indices/` into the Firestore database `healthydoggo`; `domain.search_service.SearchService.find_similar` asks TypeSafe's Jev one `choice` question with each collection as an option (probability threshold 0.3; probabilities sum to 1, so a query searches one to three collections), then runs a cosine `find_nearest` on each selected collection, content pre-filtered by `type` and optional `hasDog`, products by optional `productSku` (equality only, each filter combination needs its own composite vector index) (top 5 products, 10 messages, 15 content: `TOP_K`). Errors are the spec's `InvalidArgument` / `EmbeddingError` / `DataSourceError` in `domain/contracts.py`, raised by the clients. Embeddings are 1536-d (Firestore caps vector indexes at 2048), and gemini-embedding-2 takes query/document prefixes in the text instead of `task_type`.
+Layout follows the "Code structure" section of `specs/marketing-rag.md`, behaviour follows `specs/search-service.md`. `routines/indexer.py` embeds the spreadsheets in `src/resources/indices/` into the Firestore database `healthydoggo`. `domain.search_service.SearchService.find_similar` asks TypeSafe's Jev one `choice` question with each collection as an option (probability threshold 0.3; probabilities sum to 1, so a query searches one to three collections), then runs a cosine `find_nearest` on each selected collection: content pre-filtered by `type` and optional `hasDog`, products by optional `productSku` (which also forces products to be searched regardless of Jev). Filters are equality only and each filter combination needs its own composite vector index. Top-k is `TOP_K` (5 products, 10 messages, 15 content). Errors are the spec's `InvalidArgument` / `EmbeddingError` / `DataSourceError` in `domain/contracts.py`, raised by the clients. Embeddings are 1536-d (Firestore caps vector indexes at 2048), and gemini-embedding-2 takes query/document prefixes in the text instead of `task_type`.
 
 ### Search API (`src/api`)
 
-FastAPI over `SearchService`, spec `specs/search-api.md`. Built by a factory: `uv run uvicorn api.app:create_app --factory`. One endpoint, `POST /searchcontext`. Private by IAM, not network (ingress all, no VPC): Cloud Run admits only the portal's service account; the API itself verifies the end user's Google ID token from `X-User-Token` (`api/auth.py`, audience `USER_TOKEN_AUDIENCE`, allowlist `ALLOWED_USERS`, fail-closed at startup) and logs every call and refusal as JSON with the user's email. Tests fake `auth.verify_google_id_token` and pass a fake service to `create_app`. `Dockerfile`/`.dockerignore`/`.gcloudignore` are for this service; deploy steps are in README "Search API".
+FastAPI over `SearchService`, built by the `create_app` factory; one endpoint, `POST /searchcontext`. Private by IAM, not network (ingress all, no VPC): Cloud Run admits only allowed service accounts (`roles/run.invoker`). Two kinds of caller, both in `api/auth.py`, fail-closed at startup, every call and refusal logged as JSON with the caller's email:
+- **Portal** — forwards the end user's Google ID token in `X-User-Token` (audience `USER_TOKEN_AUDIENCE`, allowlist `ALLOWED_USERS`).
+- **Service callers** (the MCP) — no user token; their own service-account ID token is verified against the API's URL (`SERVICE_TOKEN_AUDIENCE`) and the account must be in `SERVICE_CALLERS` (set both variables or neither).
+
+Tests fake `auth.verify_google_id_token` and pass a fake service to `create_app`. The root `Dockerfile`/`.dockerignore`/`.gcloudignore` are for this service; deploy steps are in README "Search API".
 
 ### Marketing portal (`portal/`)
 
-Separate Next.js 16 app (npm, not uv), spec `specs/marketing-portal.md`; its own `portal/AGENTS.md` says to read the bundled docs in `portal/node_modules/next/dist/docs/` before writing Next.js code. NextAuth v4 with Google, allowlist `ALLOWED_USERS`; the JWT session cookie holds the user's Google ID token + refresh token, kept out of the `session` callback so the browser never sees them. `/api/search` (route handler) is the only path to the API: it adds `X-User-Token` and, when `API_AUDIENCE` is set, a metadata-server service token. Commands (in `portal/`): `npm run dev`, `npm test` (node:test on `src/lib/*.test.ts`), `npm run typecheck`, `npm run lint`, `npm run build`.
+`portal/AGENTS.md` says to read the bundled docs in `portal/node_modules/next/dist/docs/` before writing Next.js code. NextAuth v4 with Google, allowlist `ALLOWED_USERS`; the JWT session cookie holds the user's Google ID token + refresh token, kept out of the `session` callback so the browser never sees them. `/api/search` (route handler) is the only path to the API: it adds `X-User-Token` and, when `API_AUDIENCE` is set, a metadata-server service token. `npm test` is node:test on `src/lib/*.test.ts`.
 
 ### Marketing MCP (`marketing-mcp/`)
 
-Separate uv project (own `pyproject.toml`, `uv.lock`, `Dockerfile`), spec `specs/marketing-mcp.md`. FastMCP 4 server in `src/mcp-server.py` (hyphenated, so run as a script: `uv run python src/mcp-server.py`; tests load it by path), tools under `src/tools/`. `search_knowledge_base` calls the search API over HTTP as its own service account (metadata-server ID token when `API_AUDIENCE` is set) with no user token; the API admits it through `SERVICE_CALLERS`. Run tests from `marketing-mcp/`: `uv run pytest`.
+FastMCP 4 server in `src/mcp-server.py` (hyphenated, so run as a script and tests load it by path; `pythonpath = ["src"]`), tools under `src/tools/`, each exporting the function plus `NAME`/`DESCRIPTION`. Only `search_knowledge_base` exists; the spec's image, copy, slide and validation tools are still to come.
+
+- **Outbound:** `search_knowledge_base` calls the search API over HTTP (`API_URL`) as its own service account (metadata-server ID token when `API_AUDIENCE` is set), with no user token, and returns the API's JSON as is; API errors become tool errors.
+- **Inbound:** Claude Desktop reaches it as a remote connector from Anthropic's side, so Cloud Run IAM can't gate it. Over HTTP, `src/auth.py` is the gate: FastMCP's Google OAuth proxy, subclassed to refuse any email that is unverified or not in `ALLOWED_USERS`. The server won't start without `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `MCP_BASE_URL`, `MCP_JWT_SIGNING_KEY`, `ALLOWED_USERS`. Proxy state is stored encrypted in a separate Firestore database (`AUTH_FIRESTORE_DATABASE`, default `mcp-auth`), never the knowledge-base one, so it survives restarts and works across instances. `stateless_http=True` for the same reason. Stdio skips auth.
 
 ## Local-only data
 
-Gitignored and absent in a fresh clone: `content/input|output/*`, `src/resources/products.xlsx` (falls back to committed `products.sample.xlsx`), `src/resources/images_index/`, `.tools/`, `.decor-cache/`.
-
-`specs/` holds design notes: `marketing-mcp.md` (original brief), `marketing-rag.md`, `search-service.md`, `search-api.md` and `marketing-portal.md` (the RAG service, its API and the portal).
+Gitignored and absent in a fresh clone: `.env`, `content/input|output/*`, `src/resources/indices/` (the spreadsheets `rag-index` reads), `src/resources/products.xlsx`, `src/resources/images_index/`, `.tools/`, `.decor-cache/`. `src/resources/*.md` (slide design guidelines, composition rules, lifestyle brief) and `src/resources/png/` are brand rules and assets left over from the legacy pipeline.
