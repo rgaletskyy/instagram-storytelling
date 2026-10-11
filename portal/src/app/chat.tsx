@@ -3,10 +3,18 @@
 import { signIn } from "next-auth/react";
 import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
 
+import {
+  CONTENT_TYPES,
+  DEFAULT_CONTENT_TYPE,
+  isContentType,
+  type ContentType,
+  type SearchFilters,
+} from "@/lib/filters";
+
 import styles from "./page.module.css";
 
 type Entry =
-  | { role: "user"; text: string }
+  | { role: "user"; text: string; filters: SearchFilters }
   | { role: "result"; data: unknown }
   | { role: "error"; text: string; signInAgain?: boolean };
 type Message = Entry & { id: number };
@@ -14,6 +22,9 @@ type Message = Entry & { id: number };
 export function Chat() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [query, setQuery] = useState("");
+  const [contentType, setContentType] = useState<ContentType>(DEFAULT_CONTENT_TYPE);
+  // Off means with or without a dog, not "without": the switch only narrows.
+  const [withDog, setWithDog] = useState(false);
   const [busy, setBusy] = useState(false);
   const nextId = useRef(0);
   const bottom = useRef<HTMLDivElement>(null);
@@ -30,14 +41,17 @@ export function Chat() {
     event?.preventDefault();
     const text = query.trim();
     if (!text || busy) return;
-    add({ role: "user", text });
+    const filters: SearchFilters = withDog
+      ? { type: contentType, hasDog: true }
+      : { type: contentType };
+    add({ role: "user", text, filters });
     setQuery("");
     setBusy(true);
     try {
       const response = await fetch("/api/search", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ query: text }),
+        body: JSON.stringify({ query: text, ...filters }),
       });
       const body = await response.json().catch(() => ({}));
       if (response.ok) {
@@ -78,6 +92,37 @@ export function Chat() {
         {busy && <p className={styles.hint}>Searching…</p>}
         <div ref={bottom} />
       </div>
+      <div className={styles.filters}>
+        <label className={styles.field}>
+          Content type
+          <select
+            value={contentType}
+            onChange={(event) => {
+              if (isContentType(event.target.value)) setContentType(event.target.value);
+            }}
+            disabled={busy}
+          >
+            {CONTENT_TYPES.map((type) => (
+              <option key={type} value={type}>
+                {type}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className={styles.field}>
+          <button
+            type="button"
+            role="switch"
+            aria-checked={withDog}
+            className={styles.switch}
+            onClick={() => setWithDog((on) => !on)}
+            disabled={busy}
+          >
+            <span className={styles.knob} />
+          </button>
+          With a dog
+        </label>
+      </div>
       <form className={styles.composer} onSubmit={send}>
         <textarea
           value={query}
@@ -98,7 +143,15 @@ export function Chat() {
 
 function MessageView({ message }: { message: Message }) {
   if (message.role === "user") {
-    return <div className={styles.userMessage}>{message.text}</div>;
+    return (
+      <div className={styles.userMessage}>
+        {message.text}
+        <span className={styles.filterTag}>
+          {message.filters.type}
+          {message.filters.hasDog ? " · with a dog" : ""}
+        </span>
+      </div>
+    );
   }
   if (message.role === "error") {
     return (

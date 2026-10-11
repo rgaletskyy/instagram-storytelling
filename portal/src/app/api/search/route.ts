@@ -2,6 +2,7 @@ import { getToken } from "next-auth/jwt";
 import type { NextRequest } from "next/server";
 
 import { searchContext } from "@/lib/api";
+import { parseFilters } from "@/lib/filters";
 import { refreshIdToken } from "@/lib/google";
 import { needsRefresh } from "@/lib/tokens";
 
@@ -21,6 +22,10 @@ export async function POST(request: NextRequest) {
   if (!query) {
     return Response.json({ detail: "Enter a query." }, { status: 400 });
   }
+  const parsed = parseFilters(body);
+  if ("error" in parsed) {
+    return Response.json({ detail: parsed.error }, { status: 400 });
+  }
 
   // The session is refreshed whenever the page fetches it; this covers a call
   // made after the ID token lapsed but before that happened. The refreshed
@@ -38,7 +43,7 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    const { status, body: result } = await searchContext(query, idToken);
+    const { status, body: result } = await searchContext(query, parsed.filters, idToken);
     return Response.json(result, { status });
   } catch (error) {
     console.error(JSON.stringify({ severity: "ERROR", message: "API call failed", user: token.email, error: String(error) }));

@@ -2,6 +2,7 @@ import "server-only";
 
 import { GoogleAuth, type IdTokenClient } from "google-auth-library";
 
+import type { SearchFilters } from "./filters";
 import { requireEnv } from "./google";
 
 const googleAuth = new GoogleAuth();
@@ -25,7 +26,11 @@ async function serviceToken(): Promise<string | undefined> {
 export type ApiResponse = { status: number; body: unknown };
 
 /** POST /searchcontext as the signed-in user. */
-export async function searchContext(query: string, userIdToken: string): Promise<ApiResponse> {
+export async function searchContext(
+  query: string,
+  filters: SearchFilters,
+  userIdToken: string,
+): Promise<ApiResponse> {
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
     "X-User-Token": userIdToken,
@@ -36,7 +41,7 @@ export async function searchContext(query: string, userIdToken: string): Promise
   const response = await fetch(new URL("/searchcontext", requireEnv("API_URL")), {
     method: "POST",
     headers,
-    body: JSON.stringify({ query }),
+    body: JSON.stringify({ query, ...filters }),
     cache: "no-store",
   });
   const body = await response.json().catch(() => ({ detail: response.statusText }));
