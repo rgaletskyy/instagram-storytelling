@@ -15,7 +15,7 @@ from .config import (
     STORY_FORMAT,
 )
 from .ffmpeg import FFmpegMissingError
-from .image_index import (
+from routines.image_indexer.image_index import (
     INVENTORY_FILE,
     OUTPUT_FILE,
     PARALLELISM,

@@ -5,7 +5,7 @@ One import surface over the modules beside it, so callers keep saying
 wherever the call actually lives.
 
 The underscored names are re-exported deliberately: they are internal to the
-package but reached from workflow.py, image_index.py and the tests, and the
+package but reached from workflow.py, routines/image_indexer/image_index.py and the tests, and the
 redundant `as` spelling is what marks a re-export rather than an oversight.
 """
 

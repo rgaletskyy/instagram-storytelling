@@ -8,11 +8,11 @@ Three live parts, each with its own toolchain, all serving HealthyDoggo's SMM ma
 
 | Part | Where | Toolchain | Spec |
 |---|---|---|---|
-| Product search (RAG) + Search API | `src/infrastructure`, `src/domain`, `src/routines`, `src/api` | uv, repo root | `specs/marketing-rag.md`, `search-service.md`, `search-api.md` |
+| Product search (RAG) + Search API | `infrastructure/`, `search-api/src/domain`, `routines/`, `search-api/src/api` | uv, repo root | `specs/marketing-rag.md`, `search-service.md`, `search-api.md` |
 | Marketing portal | `portal/` | npm (Next.js 16) | `specs/marketing-portal.md` |
 | Marketing MCP | `marketing-mcp/` | separate uv project | `specs/marketing-mcp.md` |
 
-`src/instagram_marketing_agent/` is **legacy and currently broken**: `config.py`, `products.py`, `server.py` and `authorize_drive.py` were deleted (commit 087df61) along with its tests, but the remaining modules (`workflow.py`, `llm/`, `slide_html.py`, `image_index.py`, `cli.py`, …) still import them, so the package does not import and the `instagram-marketing-agent`, `image-index` and `authorize-drive` scripts in `pyproject.toml` fail. Much of README.md still documents it. Treat it as reference material for the MCP's planned image/slide tools, not as runnable code.
+`src/instagram_marketing_agent/` is **legacy and currently broken**: `config.py`, `products.py`, `server.py` and `authorize_drive.py` were deleted (commit 087df61) along with its tests, but the remaining modules (`workflow.py`, `llm/`, `slide_html.py`, `cli.py`, …) still import them, so the package does not import. `routines/image_indexer/image_index.py` (moved out of it) imports `instagram_marketing_agent` and is broken the same way and the `instagram-marketing-agent`, `image-index` and `authorize-drive` scripts in `pyproject.toml` fail. Much of README.md still documents it. Treat it as reference material for the MCP's planned image/slide tools, not as runnable code.
 
 ## Commands
 
@@ -38,11 +38,11 @@ Root pytest: markers `unit`, `contract`, `integration`, `slow` (`pyproject.toml`
 
 ## Architecture
 
-### Product search / RAG (`src/infrastructure`, `src/domain`, `src/routines`)
+### Product search / RAG (`infrastructure/`, `search-api/src/domain`, `routines/`)
 
-Layout follows the "Code structure" section of `specs/marketing-rag.md`, behaviour follows `specs/search-service.md`. `routines/indexer.py` embeds the spreadsheets in `src/resources/indices/` into the Firestore database `healthydoggo`. `domain.search_service.SearchService.find_similar` asks TypeSafe's Jev one `choice` question with each collection as an option (probability threshold 0.3; probabilities sum to 1, so a query searches one to three collections), then runs a cosine `find_nearest` on each selected collection: content pre-filtered by `type` and optional `hasDog`, products by optional `productSku` (which also forces products to be searched regardless of Jev). Filters are equality only and each filter combination needs its own composite vector index. Top-k is `TOP_K` (5 products, 10 messages, 15 content). Errors are the spec's `InvalidArgument` / `EmbeddingError` / `DataSourceError` in `domain/contracts.py`, raised by the clients. Embeddings are 1536-d (Firestore caps vector indexes at 2048), and gemini-embedding-2 takes query/document prefixes in the text instead of `task_type`.
+Layout follows the "Code structure" section of `specs/marketing-rag.md`, behaviour follows `specs/search-service.md`. `routines/vector_indexer/indexer.py` embeds the spreadsheets in `src/resources/indices/` into the Firestore database `healthydoggo`. `domain.search_service.SearchService.find_similar` asks TypeSafe's Jev one `choice` question with each collection as an option (probability threshold 0.3; probabilities sum to 1, so a query searches one to three collections), then runs a cosine `find_nearest` on each selected collection: content pre-filtered by `type` and optional `hasDog`, products by optional `productSku` (which also forces products to be searched regardless of Jev). Filters are equality only and each filter combination needs its own composite vector index. Top-k is `TOP_K` (5 products, 10 messages, 15 content). Errors are the spec's `InvalidArgument` / `EmbeddingError` / `DataSourceError` in `domain/contracts.py`, raised by the clients. Embeddings are 1536-d (Firestore caps vector indexes at 2048), and gemini-embedding-2 takes query/document prefixes in the text instead of `task_type`.
 
-### Search API (`src/api`)
+### Search API (`search-api/src/api`)
 
 FastAPI over `SearchService`, built by the `create_app` factory; one endpoint, `POST /searchcontext`. Private by IAM, not network (ingress all, no VPC): Cloud Run admits only allowed service accounts (`roles/run.invoker`). Two kinds of caller, both in `api/auth.py`, fail-closed at startup, every call and refusal logged as JSON with the caller's email:
 - **Portal** — forwards the end user's Google ID token in `X-User-Token` (audience `USER_TOKEN_AUDIENCE`, allowlist `ALLOWED_USERS`).

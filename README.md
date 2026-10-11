@@ -338,8 +338,8 @@ A third, separate piece: the catalogue, the Instagram DMs and the image index
 are embedded into the Firestore database `healthydoggo`, and `SearchService`
 finds what is close to a query. Specs: `specs/marketing-rag.md`,
 `specs/search-service.md`. Code lives beside the app, not inside it:
-`src/infrastructure/` (Firestore, Jev, Gemini clients), `src/domain/`
-(`SearchService`, contracts), `src/routines/indexer.py`.
+`infrastructure/` (Firestore, Jev, Gemini clients), `search-api/src/domain/`
+(`SearchService`, contracts), `routines/vector_indexer/indexer.py`.
 
 Needs `GEMINI_API_KEY`, `TYPESAFE_API_KEY`, `GOOGLE_CLOUD_PROJECT`, and
 Application Default Credentials for Firestore
@@ -394,7 +394,7 @@ one Jev is torn over can search two or all three.
 
 ## Search API
 
-`src/api` puts `SearchService` behind one HTTP endpoint for the marketing portal
+`search-api/src/api` puts `SearchService` behind one HTTP endpoint for the marketing portal
 (a Next.js app). Spec: `specs/search-api.md`.
 
 ```

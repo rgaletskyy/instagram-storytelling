@@ -3,7 +3,7 @@
 An MCP server for HealthyDoggo's SMM managers. Spec:
 `../specs/marketing-mcp.md`. So far it has one tool, `search_knowledge_base`,
 which finds products, Instagram conversations and content items through the
-search API (`../src/api`).
+search API (`../search-api`).
 
 ```bash
 uv sync

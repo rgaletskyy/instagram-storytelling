@@ -9,7 +9,7 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-ENV_FILE = Path(__file__).resolve().parents[2] / ".env"
+ENV_FILE = Path(__file__).resolve().parents[1] / ".env"
 
 
 def load_dotenv(path: Path = ENV_FILE) -> None:

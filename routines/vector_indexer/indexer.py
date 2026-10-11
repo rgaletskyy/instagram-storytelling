@@ -42,7 +42,7 @@ from infrastructure.firestore_client import (
 
 logger = logging.getLogger(__name__)
 
-INDICES_DIR = Path(__file__).resolve().parents[1] / "resources" / "indices"
+INDICES_DIR = Path(__file__).resolve().parents[2] / "src" / "resources" / "indices"
 # Rows embedded and written together. Small enough that an interruption loses
 # little, large enough that a few embedding requests run side by side.
 CHUNK = 200

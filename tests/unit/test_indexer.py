@@ -3,8 +3,8 @@
 import pytest
 from openpyxl import Workbook
 
-from routines import indexer
-from routines.indexer import (
+from routines.vector_indexer import indexer
+from routines.vector_indexer.indexer import (
     IndexDocument,
     index_collection,
     read_content,
