@@ -6,12 +6,13 @@ from pathlib import Path
 
 from pydantic import BaseModel
 
+from infrastructure.base import _api_ready, _image_block, anthropic_client, gemini_client
+
 from ..config import (
     DEEPSEEK_MODEL_PREFIX,
     DESCRIBE_MODEL,
     GEMINI_TRANSCRIBE_MODEL,
 )
-from .base import _api_ready, _image_block, anthropic_client, gemini_client
 
 
 class _ImageDescription(BaseModel):
@@ -96,7 +97,7 @@ async def _inspect_with_deepseek(path: Path) -> _ImageDescription:
     the flags decide which real photograph is attached when the product is
     generated, and losing them quietly puts an invented label on the packaging.
     """
-    from .deepseek import describe_json
+    from infrastructure.deepseek import describe_json
 
     data, media_type = _api_ready(path)
     payload = await describe_json(

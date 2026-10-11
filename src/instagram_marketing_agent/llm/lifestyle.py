@@ -4,6 +4,14 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from infrastructure.base import (
+    CAST_RULE,
+    _cast_check,
+    _cast_failures,
+    _image_block,
+    anthropic_client,
+)
+
 from ..config import (
     CLAUDE_DESCRIBE_MODEL,
     CLAUDE_SCRIPT_MODEL,
@@ -11,7 +19,6 @@ from ..config import (
     MAX_LIFESTYLE_IMAGES,
 )
 from ..models import LifestyleSet, LifestyleShot, Product, SlideVerdict
-from .base import CAST_RULE, _cast_check, _cast_failures, _image_block, anthropic_client
 
 
 def _lifestyle_brief() -> str:

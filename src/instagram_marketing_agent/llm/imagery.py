@@ -6,8 +6,9 @@ import base64
 import mimetypes
 from pathlib import Path
 
+from infrastructure.base import gemini_client
+
 from ..config import GEMINI_IMAGE_MODEL, STORY_FORMAT
-from .base import gemini_client
 
 SUBJECT_FIDELITY_RULE = (
     "The attached photographs show the REAL subjects of this scene: the product, "

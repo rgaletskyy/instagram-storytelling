@@ -20,7 +20,7 @@ from pathlib import Path
 
 import httpx
 
-from .config import load_dotenv
+from infrastructure.env import load_dotenv
 
 logger = logging.getLogger(__name__)
 

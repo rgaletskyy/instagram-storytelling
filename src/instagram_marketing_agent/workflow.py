@@ -14,7 +14,9 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 
-from . import ffmpeg, llm, slide_html
+from infrastructure import ffmpeg
+
+from . import llm, slide_html
 from .config import (
     DEFAULT_FRAME_INTERVAL,
     DEFAULT_LIFESTYLE_IMAGES,

@@ -8,11 +8,31 @@ so no text is drawn with ffmpeg and no libfreetype build is required.
 from __future__ import annotations
 
 import asyncio
+import os
 import shutil
 import subprocess
 from pathlib import Path
 
-from .config import FFMPEG_BIN, FFPROBE_BIN
+ROOT = Path(__file__).resolve().parents[1]
+
+
+def _tool(env_var: str, default: str) -> str:
+    """Resolve a binary path, treating a relative one as repo-relative.
+
+    Relative to the repo rather than the working directory, so the setting keeps
+    working whichever folder the process is launched from.
+    """
+    value = os.environ.get(env_var, default)
+    if "/" in value:
+        candidate = Path(value)
+        if not candidate.is_absolute():
+            candidate = ROOT / candidate
+        return str(candidate)
+    return value
+
+
+FFMPEG_BIN = _tool("STORY_FFMPEG", "ffmpeg")
+FFPROBE_BIN = _tool("STORY_FFPROBE", "ffprobe")
 
 
 class FFmpegMissingError(RuntimeError):
@@ -25,9 +45,7 @@ def require_ffmpeg() -> str:
     Only called when a video is actually supplied; an images-only campaign needs
     no ffmpeg at all.
     """
-    path = shutil.which(FFMPEG_BIN) or (
-        FFMPEG_BIN if Path(FFMPEG_BIN).is_file() else None
-    )
+    path = shutil.which(FFMPEG_BIN) or (FFMPEG_BIN if Path(FFMPEG_BIN).is_file() else None)
     if not path:
         raise FFmpegMissingError(
             f"ffmpeg not found (looked for {FFMPEG_BIN!r}), and it is needed to "
@@ -58,9 +76,7 @@ async def _run(*args: str) -> None:
 
 async def _has_audio(video: Path) -> bool:
     """True when the file carries at least one audio stream."""
-    probe = shutil.which(FFPROBE_BIN) or (
-        FFPROBE_BIN if Path(FFPROBE_BIN).is_file() else None
-    )
+    probe = shutil.which(FFPROBE_BIN) or (FFPROBE_BIN if Path(FFPROBE_BIN).is_file() else None)
     if not probe:
         return False
     proc = await asyncio.create_subprocess_exec(
@@ -92,15 +108,21 @@ async def extract_audio(video: Path, out_path: Path) -> Path | None:
 
 def _probe(video: Path, entry: str) -> str:
     """Read one ffprobe field. Returns "" when ffprobe is absent or fails."""
-    probe = shutil.which(FFPROBE_BIN) or (
-        FFPROBE_BIN if Path(FFPROBE_BIN).is_file() else None
-    )
+    probe = shutil.which(FFPROBE_BIN) or (FFPROBE_BIN if Path(FFPROBE_BIN).is_file() else None)
     if not probe:
         return ""
     try:
         result = subprocess.run(
-            [probe, "-v", "error", "-show_entries", entry,
-             "-of", "default=noprint_wrappers=1:nokey=1", str(video)],
+            [
+                probe,
+                "-v",
+                "error",
+                "-show_entries",
+                entry,
+                "-of",
+                "default=noprint_wrappers=1:nokey=1",
+                str(video),
+            ],
             capture_output=True,
             text=True,
             timeout=60,
@@ -119,9 +141,7 @@ def duration(video: Path) -> float:
         return 0.0
 
 
-async def extract_frames_every(
-    video: Path, out_dir: Path, every_seconds: float
-) -> list[Path]:
+async def extract_frames_every(video: Path, out_dir: Path, every_seconds: float) -> list[Path]:
     """Sample one frame every `every_seconds`, across the whole clip.
 
     The only way frames come out of a video here. A caller that wants a fixed

@@ -1,6 +1,6 @@
 """DeepSeek's vision model, over its OpenAI-compatible chat endpoint.
 
-Reached only when config.DESCRIBE_MODEL names a DeepSeek model. One endpoint
+Reached only when DESCRIBE_MODEL names a DeepSeek model. One endpoint
 and one request shape, so it goes over httpx -- already a dependency -- rather
 than pulling in a second SDK for a single call.
 """
@@ -14,7 +14,10 @@ from typing import Any
 
 import httpx
 
-from ..config import DEEPSEEK_BASE_URL, DEEPSEEK_KEY_ENV, load_dotenv
+from infrastructure.env import load_dotenv
+
+DEEPSEEK_KEY_ENV = "DEEPSEEK_API_KEY"
+DEFAULT_BASE_URL = "https://api.deepseek.com"
 
 # Describing a photograph is a single long call, not a chat turn; the default
 # five seconds times out on a large image.
@@ -90,7 +93,7 @@ async def describe_json(
 
     async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
         response = await client.post(
-            f"{DEEPSEEK_BASE_URL}/chat/completions",
+            f"{os.environ.get('DEEPSEEK_BASE_URL', DEFAULT_BASE_URL)}/chat/completions",
             headers={"Authorization": f"Bearer {api_key()}"},
             json=payload,
         )
@@ -99,8 +102,7 @@ async def describe_json(
         # The body carries the reason -- an unknown model id, an expired key --
         # and raise_for_status throws it away.
         raise RuntimeError(
-            f"DeepSeek returned {response.status_code} for {model}: "
-            f"{response.text.strip()[:400]}"
+            f"DeepSeek returned {response.status_code} for {model}: {response.text.strip()[:400]}"
         )
 
     choices = response.json().get("choices") or []

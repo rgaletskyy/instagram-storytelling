@@ -11,6 +11,8 @@ from pathlib import Path
 
 from pydantic import BaseModel, Field
 
+from infrastructure.base import _guidelines, _image_block, _rules, anthropic_client
+
 from ..config import (
     BODY_MAX_PX,
     CLAUDE_DESCRIBE_MODEL,
@@ -23,7 +25,6 @@ from ..config import (
     CanvasFormat,
 )
 from ..models import ContentFinding, SlideSpec
-from .base import _guidelines, _image_block, _rules, anthropic_client
 
 
 class _SlideHTML(BaseModel):

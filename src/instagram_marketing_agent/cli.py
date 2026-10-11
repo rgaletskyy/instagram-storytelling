@@ -7,14 +7,7 @@ import asyncio
 import sys
 from pathlib import Path
 
-from .config import (
-    DEFAULT_LIFESTYLE_IMAGES,
-    DEFAULT_SLIDES,
-    FORMATS,
-    INPUT_DIR,
-    STORY_FORMAT,
-)
-from .ffmpeg import FFmpegMissingError
+from infrastructure.ffmpeg import FFmpegMissingError
 from routines.image_indexer.image_index import (
     INVENTORY_FILE,
     OUTPUT_FILE,
@@ -22,6 +15,14 @@ from routines.image_indexer.image_index import (
     build_index,
     report,
     show_progress,
+)
+
+from .config import (
+    DEFAULT_LIFESTYLE_IMAGES,
+    DEFAULT_SLIDES,
+    FORMATS,
+    INPUT_DIR,
+    STORY_FORMAT,
 )
 from .workflow import create_campaign, create_lifestyle_content, verify_content
 

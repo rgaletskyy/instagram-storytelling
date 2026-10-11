@@ -11,7 +11,11 @@ from pathlib import Path
 
 from anthropic import AsyncAnthropic
 
-from ..config import DESIGN_GUIDELINES, STORYTELLING_RULES, load_dotenv
+from infrastructure.env import load_dotenv
+
+RESOURCES_DIR = Path(__file__).resolve().parents[1] / "src" / "resources"
+DESIGN_GUIDELINES = RESOURCES_DIR / "slide-design-guidelines.md"
+STORYTELLING_RULES = RESOURCES_DIR / "smm_composition_rules.md"
 
 _anthropic: AsyncAnthropic | None = None
 _gemini = None
@@ -60,19 +64,13 @@ def _cast_check(cast: str) -> str:
     """Tell the reviewer who the one person in this set is meant to be."""
     if not cast.strip():
         return ""
-    return (
-        f"\nThe only person who may appear anywhere in this set is:\n"
-        f"{cast.strip()}\n"
-    )
+    return f"\nThe only person who may appear anywhere in this set is:\n{cast.strip()}\n"
 
 
 def _cast_failures(cast: str) -> str:
     """Reject a frame that shows the wrong person, or more than one."""
     if not cast.strip():
-        return (
-            "- more than one person appears, or a stray second pair of hands "
-            "enters the frame\n"
-        )
+        return "- more than one person appears, or a stray second pair of hands enters the frame\n"
     return (
         "- the person shown contradicts the description above (different skin "
         "tone, hands, nails, hair or wardrobe)\n"

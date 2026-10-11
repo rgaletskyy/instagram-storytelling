@@ -24,7 +24,8 @@ import httpx
 from openpyxl import Workbook, load_workbook
 from pydantic import BaseModel, Field
 
-from instagram_marketing_agent import drive, ffmpeg, llm
+from infrastructure import drive, ffmpeg
+from instagram_marketing_agent import llm
 from instagram_marketing_agent.config import (
     CLAUDE_DESCRIBE_MODEL,
     DEEPSEEK_MODEL_PREFIX,
@@ -282,7 +283,7 @@ async def describe(image: Path, model: str = DESCRIBE_MODEL) -> ImageFacts:
     built on whichever vision model is configured.
     """
     if model.startswith(DEEPSEEK_MODEL_PREFIX):
-        from instagram_marketing_agent.llm.deepseek import describe_json
+        from infrastructure.deepseek import describe_json
 
         data, media_type = llm._api_ready(image)
         payload = await describe_json(
