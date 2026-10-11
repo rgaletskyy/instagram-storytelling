@@ -22,7 +22,13 @@ Input:
 - query: string, required
   - user query as free text
   - must not be empty
-
+- hasDog: boolean, optional
+  - if content should contain a dog on it (true), not contain one (false), or either (absent)
+  - applies to content only; matched against `hasDog`, which the indexer sets when `breed` is not empty
+- type: string, required
+  - type of content to filter. one of `лайфстайл`, `креатив`, `продуктове`
+  - must not be empty. default to `лайфстайл`
+  
 Output:
 - SearchResult
 
@@ -55,5 +61,5 @@ Side Effects:
 
 ### Product, InstagramMessage, Content
 
-- fields as in the collection schemas in [hd-marketing-rag.md](hd-marketing-rag.md)
+- fields as in the collection schemas in [marketing-rag.md](marketing-rag.md)
 - `embeddingText` and `embeddingVector` are not returned

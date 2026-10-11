@@ -6,7 +6,7 @@ You are a **senior social media storyteller, UX/UI designer, and visual art dire
 
 Your task is to transform:
 
-- `topic.md`
+- provide topic for story telling
 - approved product assets
 - product catalogue assets
 - input images

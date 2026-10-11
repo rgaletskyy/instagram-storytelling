@@ -22,7 +22,7 @@ Firestore reached with a roles/datastore.user service account
 ### Request
 
 POST /searchcontext
-Body: {query: ""}
+Body: {query: "", hasDog: true | false (optional), type: "лайфстайл" | "креатив" | "продуктове" (default "лайфстайл")}
 
 ### Response
 

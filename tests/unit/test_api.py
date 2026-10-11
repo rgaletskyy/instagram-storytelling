@@ -32,9 +32,11 @@ class _Search:
         self.result = result or SearchResult()
         self.error = error
         self.queries = []
+        self.calls = []
 
-    async def find_similar(self, query):
+    async def find_similar(self, query, has_dog=None, content_type="лайфстайл"):
         self.queries.append(query)
+        self.calls.append({"has_dog": has_dog, "content_type": content_type})
         if self.error:
             raise self.error
         return self.result
@@ -148,3 +150,24 @@ def _fresh_logger():
     logger.handlers.clear()
     yield
     logger.handlers[:] = handlers
+
+
+def test_has_dog_and_type_reach_the_service(configured):
+    search = _Search()
+    with _client(search) as client:
+        response = _post(client, body={"query": "шпіц", "hasDog": True, "type": "креатив"})
+    assert response.status_code == 200
+    assert search.calls == [{"has_dog": True, "content_type": "креатив"}]
+
+
+def test_has_dog_and_type_default_to_any_dog_and_lifestyle(configured):
+    search = _Search()
+    with _client(search) as client:
+        _post(client, body={"query": "шпіц"})
+    assert search.calls == [{"has_dog": None, "content_type": "лайфстайл"}]
+
+
+def test_a_non_boolean_has_dog_is_rejected(configured):
+    with _client(_Search()) as client:
+        response = _post(client, body={"query": "шпіц", "hasDog": "maybe"})
+    assert response.status_code == 422

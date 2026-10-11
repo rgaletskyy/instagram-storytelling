@@ -336,7 +336,7 @@ overrides it for one run.
 
 A third, separate piece: the catalogue, the Instagram DMs and the image index
 are embedded into the Firestore database `healthydoggo`, and `SearchService`
-finds what is close to a query. Specs: `specs/hd-marketing-rag.md`,
+finds what is close to a query. Specs: `specs/marketing-rag.md`,
 `specs/search-service.md`. Code lives beside the app, not inside it:
 `src/infrastructure/` (Firestore, Jev, Gemini clients), `src/domain/`
 (`SearchService`, contracts), `src/routines/indexer.py`.
@@ -395,13 +395,29 @@ one Jev is torn over can search two or all three.
 ## Search API
 
 `src/api` puts `SearchService` behind one HTTP endpoint for the marketing portal
-(a Next.js app). Spec: `specs/api.md`.
+(a Next.js app). Spec: `specs/search-api.md`.
 
 ```
 POST /searchcontext
 Authorization: Bearer <ID token for the portal's service account>   -- checked by Cloud Run
 X-User-Token:  <the signed-in user's Google ID token>              -- checked by the API
-{"query": "шампунь для шпіца"}
+{"query": "шампунь для шпіца", "hasDog": true, "type": "лайфстайл"}
+```
+
+`hasDog` and `type` narrow the content results only. `type` is one of
+`лайфстайл`, `креатив`, `продуктове` and defaults to `лайфстайл`; `hasDog`
+asks for files with a dog (`true`), without one (`false`), or either when left
+out. Both are Firestore pre-filters, so content search needs two extra vector
+indexes, one per combination of filter fields:
+
+```bash
+for fields in type type,hasDog; do
+  configs=()
+  for f in ${fields//,/ }; do configs+=(--field-config=order=ASCENDING,field-path=$f); done
+  gcloud firestore indexes composite create --database=healthydoggo \
+    --collection-group=content --query-scope=COLLECTION "${configs[@]}" \
+    --field-config='field-path=embeddingVector,vector-config={"dimension":"1536","flat":"{}"}'
+done
 ```
 
 The response is `SearchResult` with its contract field names: `products`,
@@ -522,7 +538,7 @@ text. It reads correctly at story scale; for a hero packshot, composite the real
 
 Two places where the implementation knowingly differs from the source documents:
 
-1. **Audio transcription model.** `specs/mcp-server.md` specifies `gemini-3.1-flash-lite-image` for
+1. **Audio transcription model.** The original MCP spec specified `gemini-3.1-flash-lite-image` for
    transcription. That model (Nano Banana 2 Lite) generates images and does not accept audio input, so it
    cannot do the job as written. Substituted Google's dedicated `gemini-3.5-transcribe`.
 

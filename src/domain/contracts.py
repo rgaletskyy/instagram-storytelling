@@ -1,7 +1,7 @@
 """SearchService data contracts and errors. Mirrors specs/search-service.md.
 
 Fields are snake_case here and camelCase in Firestore, as the collection
-schemas in specs/hd-marketing-rag.md name them; the alias bridges the two.
+schemas in specs/marketing-rag.md name them; the alias bridges the two.
 `embeddingText` and `embeddingVector` are stored but never returned.
 """
 
@@ -64,6 +64,9 @@ class Content(_Document):
     type: str = ""
     text_on_image: str = ""
     size_kb: float = 0.0
+    # Derived from `breed` when indexed: Firestore's vector search can only be
+    # pre-filtered with equality, and "breed is not empty" is not one.
+    has_dog: bool = False
 
 
 class SearchResult(BaseModel):

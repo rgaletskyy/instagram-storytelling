@@ -7,7 +7,8 @@ searched; see "Product search (RAG)" in README.md for the gcloud command.
 from __future__ import annotations
 
 import os
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping
+from typing import Any
 
 from domain.contracts import DataSourceError
 
@@ -36,15 +37,29 @@ class FirestoreClient:
             )
         self._client = client
 
-    async def find_nearest(self, collection: str, vector: list[float], limit: int) -> list[dict]:
+    async def find_nearest(
+        self,
+        collection: str,
+        vector: list[float],
+        limit: int,
+        filters: Mapping[str, Any] | None = None,
+    ) -> list[dict]:
         """The `limit` closest documents by cosine distance, closest first.
+
+        `filters` are field == value conditions applied before the search, so
+        the limit counts only matching documents. Each combination of filter
+        fields needs its own composite vector index; see README.md.
 
         Each carries its distance under `distance`; the embedding fields are dropped.
         """
+        from google.cloud.firestore_v1.base_query import FieldFilter
         from google.cloud.firestore_v1.base_vector_query import DistanceMeasure
         from google.cloud.firestore_v1.vector import Vector
 
-        query = self._client.collection(collection).find_nearest(
+        source = self._client.collection(collection)
+        for field, value in (filters or {}).items():
+            source = source.where(filter=FieldFilter(field, "==", value))
+        query = source.find_nearest(
             vector_field=VECTOR_FIELD,
             query_vector=Vector(vector),
             limit=limit,

@@ -17,10 +17,10 @@ from contextlib import asynccontextmanager
 from typing import Annotated
 
 from fastapi import Depends, FastAPI, HTTPException, status
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict, Field
 
 from domain.contracts import DataSourceError, EmbeddingError, InvalidArgument, SearchResult
-from domain.search_service import SearchService
+from domain.search_service import DEFAULT_CONTENT_TYPE, SearchService
 
 from .auth import AuthSettings, User, current_user
 
@@ -28,7 +28,13 @@ logger = logging.getLogger("api")
 
 
 class SearchRequest(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
     query: str
+    # Narrow content results: with or without a dog (any, when absent), and of
+    # one type. Ignored by products and messages.
+    has_dog: bool | None = Field(default=None, alias="hasDog")
+    content_type: str = Field(default=DEFAULT_CONTENT_TYPE, alias="type")
 
 
 class _CloudLoggingFormatter(logging.Formatter):
@@ -69,9 +75,16 @@ def create_app(search_service: SearchService | None = None) -> FastAPI:
     @app.post("/searchcontext", response_model=SearchResult, response_model_by_alias=True)
     async def search_context(body: SearchRequest, user: Annotated[User, Depends(current_user)]):
         started = time.perf_counter()
-        fields = {"user": user.email, "action": "searchcontext"}
+        fields = {
+            "user": user.email,
+            "action": "searchcontext",
+            "hasDog": body.has_dog,
+            "type": body.content_type,
+        }
         try:
-            result = await app.state.search.find_similar(body.query)
+            result = await app.state.search.find_similar(
+                body.query, has_dog=body.has_dog, content_type=body.content_type
+            )
         except InvalidArgument as exc:
             _log(logging.INFO, "rejected", fields, started, status=400)
             raise HTTPException(status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc

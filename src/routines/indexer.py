@@ -260,6 +260,7 @@ def read_content(path: Path) -> list[IndexDocument]:
             type=value(row, "Тип"),
             text_on_image=value(row, "Текст на фото"),
             size_kb=_number(value(row, "Розмір, KB")),
+            has_dog=bool(value(row, "Порода")),
         )
         text = _embedding_text(
             content.description,

@@ -226,6 +226,10 @@ class _Collection:
     def __init__(self, store, name):
         self.store, self.name = store, name
 
+    def where(self, *, filter):
+        self.store.filters.append((filter.field_path, filter.op_string, filter.value))
+        return self
+
     def find_nearest(self, **kwargs):
         self.store.queries.append((self.name, kwargs))
         return _VectorQuery(self.store.results, self.store.error)
@@ -248,7 +252,7 @@ class _Batch:
 class _Firestore:
     def __init__(self, results=(), error=None):
         self.results, self.error = list(results), error
-        self.queries, self.commits = [], []
+        self.queries, self.commits, self.filters = [], [], []
 
     def collection(self, name):
         return _Collection(self, name)
@@ -294,3 +298,17 @@ async def test_upsert_stores_the_vector_as_a_firestore_vector_in_batches(monkeyp
     ref, data = fake.commits[0][0]
     assert ref == ("products", "0")
     assert isinstance(data["embeddingVector"], Vector)
+
+
+async def test_filters_are_applied_as_equality_before_the_vector_search():
+    fake = _Firestore([{"fileName": "a.jpg", "distance": 0.2}])
+    await FirestoreClient(client=fake).find_nearest(
+        "content", [0.5], 15, {"type": "лайфстайл", "hasDog": True}
+    )
+    assert fake.filters == [("type", "==", "лайфстайл"), ("hasDog", "==", True)]
+
+
+async def test_no_filters_means_no_where_clause():
+    fake = _Firestore([])
+    await FirestoreClient(client=fake).find_nearest("products", [0.5], 5)
+    assert fake.filters == []

@@ -107,6 +107,7 @@ def test_content_reads_links_from_hyperlinks_and_blanks_not_applicable(tmp_path)
     assert doc.data["screenshotsPath"] == "https://drive.google.com/drive/folders/shots"
     assert doc.data["product"] == doc.data["brand"] == doc.data["textOnImage"] == ""
     assert doc.data["sizeKb"] == 108.1
+    assert doc.data["hasDog"] is True
     assert doc.data["embeddingText"] == "Шпіц біжить\nПривіт\nшпіц\nсобака, шпіц\nлайфстайл"
 
 

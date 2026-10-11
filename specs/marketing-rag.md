@@ -8,7 +8,7 @@ Solution implements RAG - Retrieval Augmented Generation for products from Healt
 Solution consist from several components:
 - Firestore database on google cloud - `healthydoggo`
 - indexer routine (runs locally only) that builds embeddings and stores document inside vector database
-- SearchService used to find simialr documents
+- SearchService used to find similar documents
 
 
 ## Firestore vector database
@@ -51,6 +51,7 @@ Database `healthydoggo` contains three collections - `products`, `instagram_mess
 - type: string, `лайфстайл`, `креатив`, `продуктове` etc
 - textOnImage: string, text that appears on image
 - sizeKb: double, size of file in kilobytes
+- hasDog: boolean, true when breed is not empty
 - embeddingText: string, concat description, audioTranscribe, product, brand, breed, tags, type, textOnImage
 - embeddingVector: calcualted by embedding model
 

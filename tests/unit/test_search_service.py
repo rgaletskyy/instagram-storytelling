@@ -3,7 +3,7 @@
 import pytest
 
 from domain.contracts import EmbeddingError, InvalidArgument, SearchResult
-from domain.search_service import THRESHOLD, TOP_K, SearchService
+from domain.search_service import DEFAULT_CONTENT_TYPE, THRESHOLD, TOP_K, SearchService
 from infrastructure.firestore_client import CONTENT, INSTAGRAM_MESSAGES, PRODUCTS
 
 pytestmark = pytest.mark.unit
@@ -37,9 +37,11 @@ class _Firestore:
     def __init__(self, hits=None):
         self.hits = hits or {}
         self.searched = []
+        self.filters = {}
 
-    async def find_nearest(self, collection, vector, limit):
+    async def find_nearest(self, collection, vector, limit, filters=None):
         self.searched.append((collection, vector, limit))
+        self.filters[collection] = filters
         return self.hits.get(collection, [])
 
 
@@ -111,5 +113,38 @@ async def test_each_collection_returns_its_own_number_of_documents():
     assert {c: limit for c, _, limit in firestore.searched} == {
         PRODUCTS: 5,
         INSTAGRAM_MESSAGES: 10,
-        CONTENT: 20,
+        CONTENT: 15,
     }
+
+
+ALL = {PRODUCTS: 0.34, INSTAGRAM_MESSAGES: 0.33, CONTENT: 0.33}
+
+
+async def test_content_is_filtered_by_type_and_dog_and_the_rest_is_not():
+    service, firestore, *_ = _service(ALL)
+    await service.find_similar("шпіц", has_dog=True, content_type="креатив")
+    assert firestore.filters == {
+        PRODUCTS: None,
+        INSTAGRAM_MESSAGES: None,
+        CONTENT: {"type": "креатив", "hasDog": True},
+    }
+
+
+async def test_without_has_dog_content_is_filtered_by_type_alone():
+    service, firestore, *_ = _service(ALL)
+    await service.find_similar("шпіц")
+    assert firestore.filters[CONTENT] == {"type": DEFAULT_CONTENT_TYPE}
+
+
+async def test_has_dog_false_asks_for_content_without_a_dog():
+    service, firestore, *_ = _service(ALL)
+    await service.find_similar("пейзаж", has_dog=False)
+    assert firestore.filters[CONTENT]["hasDog"] is False
+
+
+@pytest.mark.parametrize("content_type", ["", "lifestyle", "скріншот"])
+async def test_an_unknown_type_is_rejected_before_any_call(content_type):
+    service, firestore, jev, embedder = _service(ALL)
+    with pytest.raises(InvalidArgument, match="type"):
+        await service.find_similar("q", content_type=content_type)
+    assert jev.asked is None and embedder.queries == [] and firestore.searched == []

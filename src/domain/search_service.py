@@ -20,8 +20,11 @@ from infrastructure.jev_client import JevClient
 from .contracts import Content, InstagramMessage, InvalidArgument, Product, SearchResult
 
 THRESHOLD = 0.3
+# The content types a search can ask for, as the image index writes them.
+CONTENT_TYPES = ("лайфстайл", "креатив", "продуктове")
+DEFAULT_CONTENT_TYPE = "лайфстайл"
 # How many of the closest documents each collection returns.
-TOP_K = {PRODUCTS: 5, INSTAGRAM_MESSAGES: 10, CONTENT: 20}
+TOP_K = {PRODUCTS: 5, INSTAGRAM_MESSAGES: 10, CONTENT: 15}
 
 # The query is the state Jev reads; each collection is an option.
 JEV_INSTRUCTIONS = "Which collection holds the documents that answer this query?"
@@ -60,9 +63,27 @@ class SearchService:
         self._jev = jev or JevClient()
         self._embedder = embedder or EmbeddingClient()
 
-    async def find_similar(self, query: str) -> SearchResult:
+    async def find_similar(
+        self,
+        query: str,
+        has_dog: bool | None = None,
+        content_type: str = DEFAULT_CONTENT_TYPE,
+    ) -> SearchResult:
+        """Documents close to `query`.
+
+        `has_dog` and `content_type` narrow the content collection only: to
+        files with (True) or without (False) a dog in them -- any, when None --
+        and of the one type given. Products and messages have neither field.
+        """
         if not query or not query.strip():
             raise InvalidArgument("query must not be empty")
+        if content_type not in CONTENT_TYPES:
+            raise InvalidArgument(
+                f"type must be one of {', '.join(CONTENT_TYPES)}, got {content_type!r}"
+            )
+        filters = {CONTENT: {"type": content_type}}
+        if has_dog is not None:
+            filters[CONTENT]["hasDog"] = has_dog
 
         # Independent calls: classify and embed side by side.
         probabilities, vector = await asyncio.gather(
@@ -71,7 +92,7 @@ class SearchService:
         )
         selected = [c for c in COLLECTION_DESCRIPTIONS if probabilities.get(c, 0.0) >= THRESHOLD]
         hits = await asyncio.gather(
-            *(self._firestore.find_nearest(c, vector, TOP_K[c]) for c in selected)
+            *(self._firestore.find_nearest(c, vector, TOP_K[c], filters.get(c)) for c in selected)
         )
 
         result = SearchResult()

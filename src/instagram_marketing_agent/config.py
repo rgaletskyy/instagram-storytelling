@@ -76,7 +76,7 @@ load_dotenv()
 
 
 # --- Models ------------------------------------------------------------------
-# GEMINI_TRANSCRIBE_MODEL is a deliberate substitution: specs/mcp-server.md
+# GEMINI_TRANSCRIBE_MODEL is a deliberate substitution: the original MCP spec
 # named an image-generation model, which cannot accept audio input.
 
 CLAUDE_DESCRIBE_MODEL = "claude-sonnet-5"

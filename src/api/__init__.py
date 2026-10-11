@@ -1,1 +1,1 @@
-"""HTTP API over SearchService, for the marketing portal. Implements specs/api.md."""
+"""HTTP API over SearchService, for the marketing portal. Implements specs/search-api.md."""
