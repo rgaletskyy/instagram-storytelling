@@ -84,6 +84,7 @@ def create_app(search_service: SearchService | None = None) -> FastAPI:
             "hasDog": body.has_dog,
             "type": body.content_type,
             "productSku": body.product_sku,
+            "query": body.query,
         }
         try:
             result = await app.state.search.find_similar(
