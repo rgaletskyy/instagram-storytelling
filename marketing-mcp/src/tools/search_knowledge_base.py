@@ -108,6 +108,7 @@ async def search_knowledge_base(
                 "productSku": body.get("productSku"),
                 "hasDog": body.get("hasDog"),
                 "type": body.get("type"),
+                "query": body.get("query"),
             },
             ensure_ascii=False,
         ),
