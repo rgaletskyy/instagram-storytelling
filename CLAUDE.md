@@ -8,7 +8,7 @@ Three live parts, each with its own toolchain, all serving HealthyDoggo's SMM ma
 
 | Part | Where | Toolchain | Spec |
 |---|---|---|---|
-| Product search (RAG) + Search API | `infrastructure/`, `search-api/src/domain`, `routines/`, `search-api/src/api` | uv, repo root | `specs/marketing-rag.md`, `search-service.md`, `search-api.md` |
+| Product search (RAG) + Search API | `infrastructure/`, `search-api/src/domain`, `routines/`, `search-api/src/api` | uv, repo root | `specs/marketing-content-rag.md`, `content-search-service.md`, `search-api.md` |
 | Marketing portal | `portal/` | npm (Next.js 16) | `specs/marketing-portal.md` |
 | Marketing MCP | `marketing-mcp/` | separate uv project | `specs/marketing-mcp.md` |
 
@@ -40,7 +40,11 @@ Root pytest: markers `unit`, `contract`, `integration`, `slow` (`pyproject.toml`
 
 ### Product search / RAG (`infrastructure/`, `search-api/src/domain`, `routines/`)
 
-Layout follows the "Code structure" section of `specs/marketing-rag.md`, behaviour follows `specs/search-service.md`. `routines/vector_indexer/indexer.py` embeds the spreadsheets in `src/resources/indices/` into the Firestore database `healthydoggo`. `domain.search_service.SearchService.find_similar` asks TypeSafe's Jev one `choice` question with each collection as an option (probability threshold 0.3; probabilities sum to 1, so a query searches one to three collections), then runs a cosine `find_nearest` on each selected collection: content pre-filtered by `type` and optional `hasDog`, products by optional `productSku` (which also forces products to be searched regardless of Jev). Filters are equality only and each filter combination needs its own composite vector index. Top-k is `TOP_K` (5 products, 10 messages, 15 content). Errors are the spec's `InvalidArgument` / `EmbeddingError` / `DataSourceError` in `domain/contracts.py`, raised by the clients. Embeddings are 1536-d (Firestore caps vector indexes at 2048), and gemini-embedding-2 takes query/document prefixes in the text instead of `task_type`.
+Layout follows the "Code structure" section of `specs/marketing-content-rag.md`, behaviour follows `specs/content-search-service.md`. `routines/vector_indexer/indexer.py` embeds the spreadsheets in `src/resources/indices/` into the Firestore database `healthydoggo`. `domain.content_search_service.SearchService.find_similar` asks TypeSafe's Jev one `choice` question with each collection as an option (probability threshold 0.3; probabilities sum to 1, so a query searches one to three collections), then runs a cosine `find_nearest` on each selected collection: content pre-filtered by `type` and optional `hasDog`, products by optional `productSku` (which also forces products to be searched regardless of Jev). Filters are equality only and each filter combination needs its own composite vector index. Top-k is `TOP_K` (5 products, 10 messages, 15 content). Errors are the spec's `InvalidArgument` / `EmbeddingError` / `DataSourceError` in `domain/contracts.py`, raised by the clients. Embeddings are 1536-d (Firestore caps vector indexes at 2048), and gemini-embedding-2 takes query/document prefixes in the text instead of `task_type`.
+
+### Content insights (`specs/instagram-insights-rag.md`, `content-insights-service.md`)
+
+Instagram post/reel/story insights in BigQuery, dataset `instagram_insights`, table `organic` (one row per media, merged by `id`; partitioned by month on `timestamp` with a required partition filter, so every statement bounds `timestamp`). Written by `routines/insights_sync` (`uv run insights-sync`, weekly, posts and reels of the last 30 days) and by the story webhook `search-api/src/webhook` (a separate public FastAPI app, `webhook.app:create_app`, checking Meta's `X-Hub-Signature-256`), both through `routines/insights_sync/rows.py`. Read by `domain.content_insights_service` behind `POST /contentinsights` on the search API. `infrastructure/instagram_meta_client.py` is the Graph API over Facebook Login (`graph.facebook.com`), `infrastructure/bigquery_client.py` the table; metric lists per media product type follow `specs/meta/insights.md`, and a request with an unsupported metric fails as a whole.
 
 ### Search API (`search-api/src/api`)
 

@@ -1,4 +1,4 @@
-# SearchService
+# ContentSearchService
 
 ## Responsibility
 
@@ -64,5 +64,5 @@ Side Effects:
 
 ### Product, InstagramMessage, Content
 
-- fields as in the collection schemas in [marketing-rag.md](marketing-rag.md)
+- fields as in the collection schemas in [marketing-content-rag.md](marketing-content-rag.md)
 - `embeddingText` and `embeddingVector` are not returned

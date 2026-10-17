@@ -14,13 +14,16 @@ import logging
 import sys
 import time
 from contextlib import asynccontextmanager
+from datetime import datetime
 from typing import Annotated
 
 from fastapi import Depends, FastAPI, HTTPException, status
 from pydantic import BaseModel, ConfigDict, Field
 
+from domain.content_insights_contracts import ContentInsights
+from domain.content_insights_service import ContentInsightsService
+from domain.content_search_service import DEFAULT_CONTENT_TYPE, SearchService
 from domain.contracts import DataSourceError, EmbeddingError, InvalidArgument, SearchResult
-from domain.search_service import DEFAULT_CONTENT_TYPE, SearchService
 
 from .auth import AuthSettings, User, current_user
 
@@ -37,6 +40,16 @@ class SearchRequest(BaseModel):
     content_type: str = Field(default=DEFAULT_CONTENT_TYPE, alias="type")
     # Narrow products to this one SKU. Ignored by content and messages.
     product_sku: str | None = Field(default=None, alias="productSku")
+
+
+class InsightsRequest(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    from_: datetime = Field(alias="from")
+    to: datetime | None = None
+    media_type: str | None = Field(default=None, alias="mediaType")
+    media_product_type: str | None = Field(default=None, alias="mediaProductType")
+    sort_by: str | None = Field(default=None, alias="sortBy")
 
 
 class _CloudLoggingFormatter(logging.Formatter):
@@ -58,7 +71,10 @@ def _configure_logging() -> None:
     logger.propagate = False
 
 
-def create_app(search_service: SearchService | None = None) -> FastAPI:
+def create_app(
+    search_service: SearchService | None = None,
+    insights_service: ContentInsightsService | None = None,
+) -> FastAPI:
     from infrastructure.env import load_dotenv
 
     load_dotenv()
@@ -69,6 +85,7 @@ def create_app(search_service: SearchService | None = None) -> FastAPI:
     async def lifespan(app: FastAPI):
         # Built once and shared: the clients hold connections worth reusing.
         app.state.search = search_service or SearchService()
+        app.state.insights = insights_service or ContentInsightsService()
         yield
 
     app = FastAPI(title="HealthyDoggo API", lifespan=lifespan)
@@ -118,6 +135,36 @@ def create_app(search_service: SearchService | None = None) -> FastAPI:
             instagramMessages=len(result.instagram_messages),
             content=len(result.content),
         )
+        return result
+
+    @app.post("/contentinsights", response_model=ContentInsights, response_model_by_alias=True)
+    async def content_insights(body: InsightsRequest, user: Annotated[User, Depends(current_user)]):
+        started = time.perf_counter()
+        fields = {
+            "user": user.email,
+            "caller": "service" if user.is_service else "user",
+            "action": "contentinsights",
+            "from": body.from_,
+            "to": body.to,
+            "mediaType": body.media_type,
+            "mediaProductType": body.media_product_type,
+            "sortBy": body.sort_by,
+        }
+        try:
+            result = await app.state.insights.query_content_insights(
+                body.from_,
+                to=body.to,
+                media_type=body.media_type,
+                media_product_type=body.media_product_type,
+                sort_by=body.sort_by,
+            )
+        except InvalidArgument as exc:
+            _log(logging.INFO, "rejected", fields, started, status=400)
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+        # A BigQuery failure is part of the answer (errorCode), as the spec has it.
+        level = logging.ERROR if result.error_code else logging.INFO
+        message = f"bigquery failed: {result.error_message}" if result.error_code else "queried"
+        _log(level, message, fields, started, status=200, items=len(result.items))
         return result
 
     return app

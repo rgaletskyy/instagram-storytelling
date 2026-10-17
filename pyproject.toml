@@ -22,6 +22,7 @@ dependencies = [
     "google-cloud-firestore>=2.33.0",
     "fastapi>=0.142.2",
     "uvicorn>=0.30",
+    "google-cloud-bigquery>=3.25",
 ]
 
 [project.optional-dependencies]
@@ -36,6 +37,7 @@ instagram-marketing-agent = "instagram_marketing_agent.cli:main"
 image-index = "routines.image_indexer.image_index:main"
 authorize-drive = "instagram_marketing_agent.authorize_drive:main"
 rag-index = "routines.vector_indexer.indexer:main"
+insights-sync = "routines.insights_sync.sync:main"
 
 [tool.hatch.build.targets.wheel]
 packages = [
@@ -44,6 +46,7 @@ packages = [
     "search-api/src/domain",
     "routines",
     "search-api/src/api",
+    "search-api/src/webhook",
 ]
 
 [tool.ruff]

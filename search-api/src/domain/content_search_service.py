@@ -1,4 +1,4 @@
-"""Finds documents close to a user query. Implements specs/search-service.md.
+"""Finds documents close to a user query. Implements specs/content-search-service.md.
 
 Jev decides which collections the query is about; only those are searched, by
 cosine distance against the query's embedding.

@@ -336,8 +336,8 @@ overrides it for one run.
 
 A third, separate piece: the catalogue, the Instagram DMs and the image index
 are embedded into the Firestore database `healthydoggo`, and `SearchService`
-finds what is close to a query. Specs: `specs/marketing-rag.md`,
-`specs/search-service.md`. Code lives beside the app, not inside it:
+finds what is close to a query. Specs: `specs/marketing-content-rag.md`,
+`specs/content-search-service.md`. Code lives beside the app, not inside it:
 `infrastructure/` (Firestore, Jev, Gemini clients), `search-api/src/domain/`
 (`SearchService`, contracts), `routines/vector_indexer/indexer.py`.
 
@@ -380,7 +380,7 @@ Two kinds of row are never embedded: Instagram's own notices and placeholders (`
 `[Фото]` and the like), and image-index rows nobody has described yet.
 
 ```python
-from domain.search_service import SearchService
+from domain.content_search_service import SearchService
 
 result = await SearchService().find_similar("шампунь для шпіца")
 result.products, result.instagram_messages, result.content  # top 5 / 10 / 20, closest first

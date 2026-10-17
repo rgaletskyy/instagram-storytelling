@@ -62,9 +62,9 @@ Purpose of indexing routine is to read data from excel file, build document, cal
 Use Gemini embedding model to calculate embeddings for each docuemnt. Dimension should be 1536: Firestore indexes vectors of at most 2048 dimensions, so the model's native 3072 could not be searched. Model gemini-embedding-2.
 Read data from @src/resources/indices folder
 
-## SearchService
+## ContentSearchService
 
-Purpose of SearchService is to analyze user query and fetch related documents from vector database. Details described in @specs/search-service.md
+Purpose of SearchService is to analyze user query and fetch related documents from vector database. Details described in @specs/content-search-service.md
 
 
 # Code structure

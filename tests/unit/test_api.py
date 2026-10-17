@@ -9,6 +9,7 @@ from google.auth.exceptions import MalformedError, TransportError
 
 from api import app as api_app
 from api import auth
+from domain.content_insights_contracts import ContentInsights
 from domain.contracts import (
     DataSourceError,
     EmbeddingError,
@@ -71,8 +72,23 @@ def configured(monkeypatch):
     return seen
 
 
-def _client(search):
-    return TestClient(api_app.create_app(search_service=search))
+class _Insights:
+    def __init__(self, result=None, error=None):
+        self.result = result or ContentInsights()
+        self.error = error
+        self.calls = []
+
+    async def query_content_insights(self, from_, **kwargs):
+        self.calls.append({"from": from_, **kwargs})
+        if self.error:
+            raise self.error
+        return self.result
+
+
+def _client(search, insights=None):
+    return TestClient(
+        api_app.create_app(search_service=search, insights_service=insights or _Insights())
+    )
 
 
 def _post(client, token="good", body=None):
@@ -254,3 +270,31 @@ def test_half_a_service_configuration_refuses_to_start(configured, monkeypatch, 
     monkeypatch.setenv(only, "x")
     with pytest.raises(RuntimeError, match="or neither"):
         api_app.create_app(search_service=_Search())
+
+
+# --- POST /contentinsights -------------------------------------------------------
+
+
+def _insights(client, body, token="good"):
+    return client.post("/contentinsights", json=body, headers={auth.USER_TOKEN_HEADER: token})
+
+
+def test_content_insights_pass_the_filters_and_answer_in_contract_names(configured):
+    insights = _Insights(ContentInsights(error_code="accessDenied", error_message="no"))
+    body = {"from": "2026-10-01T00:00:00Z", "mediaProductType": "REELS", "sortBy": "views"}
+    with _client(_Search(), insights) as client:
+        response = _insights(client, body)
+
+    assert response.status_code == 200
+    assert response.json() == {"items": [], "errorCode": "accessDenied", "errorMessage": "no"}
+    (call,) = insights.calls
+    assert call["from"].isoformat() == "2026-10-01T00:00:00+00:00"
+    assert (call["media_product_type"], call["sort_by"], call["to"]) == ("REELS", "views", None)
+
+
+def test_content_insights_need_from_and_an_allowed_user(configured):
+    insights = _Insights(error=InvalidArgument("sortBy must be one of ..."))
+    with _client(_Search(), insights) as client:
+        assert _insights(client, {}).status_code == 422
+        assert _insights(client, {"from": "2026-10-01"}, token="stranger").status_code == 403
+        assert _insights(client, {"from": "2026-10-01", "sortBy": "x"}).status_code == 400

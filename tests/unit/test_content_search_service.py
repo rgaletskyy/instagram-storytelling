@@ -1,9 +1,9 @@
-"""SearchService.find_similar against the behaviour in specs/search-service.md."""
+"""SearchService.find_similar against the behaviour in specs/content-search-service.md."""
 
 import pytest
 
+from domain.content_search_service import DEFAULT_CONTENT_TYPE, THRESHOLD, TOP_K, SearchService
 from domain.contracts import EmbeddingError, InvalidArgument, SearchResult
-from domain.search_service import DEFAULT_CONTENT_TYPE, THRESHOLD, TOP_K, SearchService
 from infrastructure.firestore_client import CONTENT, INSTAGRAM_MESSAGES, PRODUCTS
 
 pytestmark = pytest.mark.unit

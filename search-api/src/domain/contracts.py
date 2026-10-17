@@ -1,7 +1,7 @@
-"""SearchService data contracts and errors. Mirrors specs/search-service.md.
+"""SearchService data contracts and errors. Mirrors specs/content-search-service.md.
 
 Fields are snake_case here and camelCase in Firestore, as the collection
-schemas in specs/marketing-rag.md name them; the alias bridges the two.
+schemas in specs/marketing-content-rag.md name them; the alias bridges the two.
 `embeddingText` and `embeddingVector` are stored but never returned.
 """
 
