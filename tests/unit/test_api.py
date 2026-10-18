@@ -103,9 +103,9 @@ def test_an_allowed_user_gets_the_search_result_in_contract_field_names(configur
 
     assert response.status_code == 200
     body = response.json()
-    assert set(body) == {"products", "instagramMessages", "content"}
-    assert body["products"][0]["sku"] == "ND-1"
-    assert body["products"][0]["distance"] == 0.12
+    # Empty properties are left out: no messages, no content, no product name.
+    assert set(body) == {"products"}
+    assert body["products"][0] == {"sku": "ND-1", "price": 295.0, "distance": 0.12}
     assert search.queries == ["шампунь"]
     assert configured == [("portal-client-id",)]
 
@@ -291,7 +291,7 @@ def test_content_insights_pass_the_filters_and_answer_in_contract_names(configur
         response = _insights(client, body)
 
     assert response.status_code == 200
-    assert response.json() == {"items": [], "errorCode": "accessDenied", "errorMessage": "no"}
+    assert response.json() == {"errorCode": "accessDenied", "errorMessage": "no"}
     (call,) = insights.calls
     assert call["from"].isoformat() == "2026-10-01T00:00:00+00:00"
     assert (call["media_product_type"], call["sort_by"], call["to"]) == ("REELS", "views", None)

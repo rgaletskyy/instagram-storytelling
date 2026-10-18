@@ -69,14 +69,14 @@ Implemented by the story webhook service (`search-api/src/webhook`), not by this
 
 ### ContentInsights
 
-- items: list<ContentInsight>, required, array of content insights. Can be empty
+- items: list<ContentInsight>, required, array of content insights. Can be empty; the API leaves an empty one out
 - errorCode: string, optional, error reason returned from BigQuery (e.g. `accessDenied`)
 - errorMessage: string, optional, error message returned from BigQuery
 
 ### ContentInsight
 
 - fields as the columns of `organic` in [instagram-insights-rag.md](instagram-insights-rag.md), with the same names
-- metrics without a value are null, never 0
+- metrics without a value are null, never 0; the API leaves them out of its response
 
 ## Open Questions
 

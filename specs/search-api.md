@@ -17,6 +17,8 @@ Service accounts listed in SERVICE_CALLERS (the marketing MCP server) may call w
 
 # Endpoints
 
+Every response leaves out empty properties, at any depth: null, empty strings, empty arrays and empty objects (`api/responses.py`, `without_empty`). 0 and false are kept. A missing property means "no value"; e.g. a search with no messages has no `instagramMessages`, and an insights result with no matches is `{}`.
+
 ## searchcontent
 
 

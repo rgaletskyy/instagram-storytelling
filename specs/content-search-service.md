@@ -43,7 +43,7 @@ Behavior:
 - Query is embedded with the same model and dimension as the indexed documents (`gemini-embedding-2`, 1536)
 - A collection is searched only if its classifier probability is >= 0.3
 - When productSku is present, products are always searched, whatever their probability
-- A collection that is not searched, or has no matches, yields an empty list, never null
+- A collection that is not searched, or has no matches, yields an empty list, never null; the API leaves an empty list out of its response
 - Each list holds documents of its own collection only
 - Must not modify stored documents
 - Use distanceMeasure: "COSINE" in FireStore

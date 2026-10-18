@@ -21,7 +21,7 @@ DESCRIPTION = (
     "into `mediaProductType` (and `mediaType` only for photos, videos or carousels), the "
     "metrics into `sortBy`, most important first, and the number of items into `topN`. "
     "Each item comes back with its permalink, caption, publication time and every metric; "
-    "a metric with no value is null, not 0."
+    "a metric with no value is left out, never 0. No 'items' means nothing matched."
 )
 
 MediaProductType = Literal["FEED", "STORY", "REELS", "AD"]

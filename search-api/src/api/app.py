@@ -26,6 +26,7 @@ from domain.content_search_service import DEFAULT_CONTENT_TYPE, SearchService
 from domain.contracts import DataSourceError, EmbeddingError, InvalidArgument, SearchResult
 
 from .auth import AuthSettings, User, current_user
+from .responses import without_empty
 
 logger = logging.getLogger("api")
 
@@ -93,6 +94,7 @@ def create_app(
     app.state.auth = auth
 
     @app.post("/searchcontent", response_model=SearchResult, response_model_by_alias=True)
+    @without_empty
     async def search_context(body: SearchRequest, user: Annotated[User, Depends(current_user)]):
         started = time.perf_counter()
         fields = {
@@ -141,6 +143,7 @@ def create_app(
     @app.post(
         "/searchContentInsights", response_model=ContentInsights, response_model_by_alias=True
     )
+    @without_empty
     async def content_insights(body: InsightsRequest, user: Annotated[User, Depends(current_user)]):
         started = time.perf_counter()
         fields = {
