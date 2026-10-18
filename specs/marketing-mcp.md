@@ -1,16 +1,18 @@
 # Highlevel overview and purpose
 
-hd-marketing-mcp server exposes tools to simplify work for SMM managers via searching, creating or improving existing content.
+hd-marketing-mcp server exposes tools to simplify work for SMM managers via searching, creating or improving existing content, searching insights and posted content by filters.
 MCP will have next functionality:
-- helps to find proper bits of content inside repository of contents. Uses Firectore vector index for search.
-- modify or improve existing image
-- generate image(s) from scratch using prompts and samples
-- create script for story telling
-- generate copy according to brand rules
+- helps to find content inside repository of contents. Uses Firectore vector index for search.
+- search content insights via customers query. E.g - top 5 posts from May based on customers interaction.
+
+- generate copy/caption for post according to brand rules.
+- validate captions and return comments, improvements.
 - generate slide for story telling containing text, image and brand elements
-- validate copy and return comments
+
+- generate image(s) from scratch using prompts and samples
+- modify or improve existing image
+- create script for story telling
 - validate slide and return comments
-- search content insights via customers query. E.g - top 5 posts from May based on customersInteraction
 
 ## Tools
 
@@ -72,17 +74,18 @@ Passed to the search API's `POST /searchContentInsights` as is (see [search-api.
   "the post with the most views" = 1. Leave empty when the user gives no number and asks for everything in the period.
 
 
+### generate_caption
+
+### validate_caption
+
+
 ### modify_image
 
 ### generate_image
 
 ### create_storytelling_script
 
-### create_textcopy
-
 ### create_smm_slide
-
-### validate_textcopy
 
 ### validate_smm_slide
 
