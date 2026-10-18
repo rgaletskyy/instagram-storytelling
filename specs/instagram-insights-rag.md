@@ -30,8 +30,8 @@ Metrics are lifetime values. A metric the API returns no value for is stored as 
 - mediaType: STRING(50), required
 - mediaProductType: STRING(50), required
 - caption: STRING(2500), nullable
-- mediaUrl: STRING(200), nullable
-- thumbnailUrl: STRING(200), nullable
+- mediaUrl: STRING(2000), nullable
+- thumbnailUrl: STRING(2000), nullable
 - permaLink: STRING, nullable
 - views: INTEGER, nullable
 - reach: INTEGER, nullable
@@ -56,12 +56,13 @@ Metrics are lifetime values. A metric the API returns no value for is stored as 
 
 ## Sync job
 
-Purpose of sync job is to fetch data using meta graph api and store it in bigquery. Job should run only for posts and reels once per week.
+Purpose of sync job is to fetch data using meta graph api and store it in bigquery. Job runs once per week, every Sunday at 00:00 Europe/Kyiv, and syncs only media product types FEED, REELS and AD.
 Each sync fetches content within [now - 30d, now] time period. 
 For stories, which expire every 24h, sync will be done via callback on a public webhook endpoint (see Story webhook).
 
 - Code: `routines/insights_sync`, run as `insights-sync [--days N]` (default 30).
-- Lists the account's media newest first and stops at the first one older than the period; stories are skipped.
+- Lists the account's media newest first and stops at the first one older than the period; only FEED, REELS and AD are synced, stories (STORY) come only through the webhook.
+- AD media are asked for the FEED metrics.
 - Asks each media's insights with the metrics its media product type supports (@specs/meta/insights.md); a request with an unsupported metric fails as a whole.
 - Rows are merged into `organic` by `id`: an existing row is updated with the latest numbers, a new one inserted. Re-running is harmless.
 - A media whose insights the API refuses (e.g. posted before the account became professional) is logged and skipped; the others are still stored. Failing to list media or to write to BigQuery fails the job.
@@ -87,7 +88,7 @@ Metric to column:
 | ig_reels_video_view_total_time | reelViewTotalTime | REELS |
 | reels_skip_rate | reelSkipRate | REELS |
 
-Media fields: `id`, `timestamp`, `media_type` → `mediaType`, `media_product_type` → `mediaProductType`, `caption` (cut to 2500), `media_url` → `mediaUrl`, `thumbnail_url` → `thumbnailUrl`, `permalink` → `permaLink`. A URL longer than its column (200) is stored as NULL rather than cut.
+Media fields: `id`, `timestamp`, `media_type` → `mediaType`, `media_product_type` → `mediaProductType`, `caption` (cut to 2500), `media_url` → `mediaUrl`, `thumbnail_url` → `thumbnailUrl`, `permalink` → `permaLink`. A URL longer than its column (2000) is stored as NULL rather than cut.
 
 ## Story webhook
 
@@ -112,8 +113,8 @@ Media fields: `id`, `timestamp`, `media_type` → `mediaType`, `media_product_ty
 
 ## Open Questions
 
-- Initial load from CSV: the Business Suite exports are to be added to `specs/`; the importer is built once their columns are known.
-- Instagram CDN `media_url` / `thumbnail_url` are signed, expire, and are often longer than 200 characters, so many will be NULL. Widen the columns or drop them?
+- Initial load from CSV: done from the Business Suite exports in `specs/meta/posts` and `specs/meta/stories` (`uv run insights-sync --csv FILE... [--types ...]`, `routines/insights_sync/csv_import.py`). Rows are classified by "Post type" (the 2023-24 files are swapped between the folders), "Publish time" is US Pacific, "Sticker taps" has no column, and `totalInteractions` and the reel watch-time columns are empty for imported rows until a sync reads them again.
+- Instagram CDN `media_url` / `thumbnail_url` are signed and expire, so stored URLs stop working after a while. Columns widened to 2000 characters so they fit.
 - The `story_insights` payload keys are taken from Meta's examples; confirm them with the App Dashboard's Test button.
 - `ads` table: no schema yet.
 

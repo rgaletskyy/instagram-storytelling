@@ -10,7 +10,7 @@ from domain.contracts import InvalidArgument
 from infrastructure.bigquery_client import ORGANIC_COLUMNS, BigQueryClient, BigQueryError
 from infrastructure.instagram_meta_client import InstagramMedia, MediaInsights, MetaApiError
 from routines.insights_sync.rows import organic_row
-from routines.insights_sync.sync import sync
+from routines.insights_sync.sync import load_csv, sync
 
 pytestmark = pytest.mark.unit
 
@@ -41,7 +41,7 @@ def test_a_row_has_every_column_and_metrics_under_their_column_names():
 
 
 def test_a_long_caption_is_cut_but_a_long_url_is_dropped():
-    row = organic_row(_media(caption="a" * 3000, media_url="https://cdn/" + "x" * 300), {})
+    row = organic_row(_media(caption="a" * 3000, media_url="https://cdn/" + "x" * 2000), {})
 
     assert row["caption"] == "a" * 2500
     assert row["mediaUrl"] is None
@@ -82,22 +82,50 @@ class _BigQuery:
         return self.rows
 
 
-async def test_the_sync_merges_the_last_30_days_of_posts_and_reels_and_skips_refusals():
-    meta = _Meta([_media("a"), _media("b", "REELS"), _media("s", "STORY"), _media("old")],
-                 refused={"old"})  # fmt: skip
+async def test_the_sync_merges_the_last_30_days_of_feed_reels_and_ads_and_skips_refusals():
+    meta = _Meta([_media("a"), _media("b", "REELS"), _media("ad", "AD"), _media("s", "STORY"),
+                  _media("x", "UNKNOWN"), _media("old")], refused={"old"})  # fmt: skip
     bigquery = _BigQuery()
 
     summary = await sync(meta, bigquery, now=NOW)
 
     assert meta.since == datetime(2026, 9, 17, 12, tzinfo=UTC)
-    assert [row["id"] for row in bigquery.merged] == ["a", "b"]
+    assert [row["id"] for row in bigquery.merged] == ["a", "b", "ad"]
     assert bigquery.merged[0]["views"] == 10
-    assert (summary.merged, summary.failed) == (2, 1)
+    assert (summary.merged, summary.failed) == (3, 1)
 
 
 async def test_a_bigquery_failure_fails_the_sync():
     with pytest.raises(BigQueryError):
         await sync(_Meta([_media()]), _BigQuery(error=BigQueryError("accessDenied", "no")), now=NOW)
+
+
+EXPORT = (
+    '\ufeff"Post ID","Account ID",Description,"Duration (sec)","Publish time",Permalink,'
+    '"Post type",Date,Views,Reach,Saves,Navigation,"Sticker taps"\n'
+    '1,9,"Лапи\nдва рядки",59,"12/27/2024 07:53",https://ig/reel/1,"IG reel",Lifetime,5114,3555,60\n'
+    '2,9,,0,"10/06/2026 01:57",https://ig/stories/2,"IG story",Lifetime,186,163,,175,3\n'
+    '3,9,,0,"10/06/2026 01:57",,"IG live",Lifetime,1,1,,,\n'
+)
+
+
+async def test_exports_are_loaded_by_post_type_in_pacific_time(tmp_path):
+    path = tmp_path / "export.csv"
+    path.write_text(EXPORT, encoding="utf-8")
+    bigquery = _BigQuery()
+
+    assert await load_csv(bigquery, [path, path], types=["REELS"]) == 1
+    assert await load_csv(bigquery, [path]) == 2
+
+    reel, _, story = bigquery.merged
+    assert (reel["id"], reel["mediaProductType"], reel["mediaType"]) == ("1", "REELS", "VIDEO")
+    assert reel["timestamp"] == datetime(2024, 12, 27, 15, 53, tzinfo=UTC)
+    assert (reel["caption"], reel["views"], reel["saved"], reel["navigation"]) == (
+        "Лапи\nдва рядки", 5114, 60, None,
+    )  # fmt: skip
+    assert (story["mediaProductType"], story["mediaType"]) == ("STORY", "IMAGE")
+    assert story["timestamp"] == datetime(2026, 10, 6, 8, 57, tzinfo=UTC)
+    assert (story["navigation"], story["saved"]) == (175, None)
 
 
 # --- BigQueryClient ------------------------------------------------------------

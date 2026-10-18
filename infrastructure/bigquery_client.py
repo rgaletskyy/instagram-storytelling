@@ -52,8 +52,8 @@ MAX_LENGTHS = {
     "mediaType": 50,
     "mediaProductType": 50,
     "caption": 2500,
-    "mediaUrl": 200,
-    "thumbnailUrl": 200,
+    "mediaUrl": 2000,
+    "thumbnailUrl": 2000,
 }
 
 
