@@ -1,4 +1,4 @@
-"""POST /searchcontext: the user check, the response shape, the error mapping."""
+"""POST /searchcontent: the user check, the response shape, the error mapping."""
 
 import json
 import logging
@@ -93,7 +93,7 @@ def _client(search, insights=None):
 
 def _post(client, token="good", body=None):
     headers = {auth.USER_TOKEN_HEADER: token} if token else {}
-    return client.post("/searchcontext", json=body or {"query": "шампунь"}, headers=headers)
+    return client.post("/searchcontent", json=body or {"query": "шампунь"}, headers=headers)
 
 
 def test_an_allowed_user_gets_the_search_result_in_contract_field_names(configured):
@@ -144,7 +144,7 @@ def test_service_errors_map_to_status_codes(configured, error, code):
 
 def test_a_body_without_query_is_rejected(configured):
     with _client(_Search()) as client:
-        response = client.post("/searchcontext", json={}, headers={auth.USER_TOKEN_HEADER: "good"})
+        response = client.post("/searchcontent", json={}, headers={auth.USER_TOKEN_HEADER: "good"})
     assert response.status_code == 422
 
 
@@ -215,7 +215,7 @@ def service_callers(configured, monkeypatch):
 
 def _post_as_service(client, bearer, body=None):
     return client.post(
-        "/searchcontext",
+        "/searchcontent",
         json=body or {"query": "бальзам"},
         headers={"Authorization": f"Bearer {bearer}"},
     )
@@ -257,7 +257,7 @@ def test_a_user_token_takes_precedence_over_the_service_token(service_callers):
     search = _Search()
     with _client(search) as client:
         response = client.post(
-            "/searchcontext",
+            "/searchcontent",
             json={"query": "q"},
             headers={auth.USER_TOKEN_HEADER: "stranger", "Authorization": "Bearer mcp-service"},
         )
@@ -272,16 +272,21 @@ def test_half_a_service_configuration_refuses_to_start(configured, monkeypatch, 
         api_app.create_app(search_service=_Search())
 
 
-# --- POST /contentinsights -------------------------------------------------------
+# --- POST /searchContentInsights -------------------------------------------------
 
 
 def _insights(client, body, token="good"):
-    return client.post("/contentinsights", json=body, headers={auth.USER_TOKEN_HEADER: token})
+    return client.post("/searchContentInsights", json=body, headers={auth.USER_TOKEN_HEADER: token})
 
 
 def test_content_insights_pass_the_filters_and_answer_in_contract_names(configured):
     insights = _Insights(ContentInsights(error_code="accessDenied", error_message="no"))
-    body = {"from": "2026-10-01T00:00:00Z", "mediaProductType": "REELS", "sortBy": "views"}
+    body = {
+        "from": "2026-10-01T00:00:00Z",
+        "mediaProductType": "REELS",
+        "sortBy": "views",
+        "topN": 5,
+    }
     with _client(_Search(), insights) as client:
         response = _insights(client, body)
 
@@ -290,11 +295,13 @@ def test_content_insights_pass_the_filters_and_answer_in_contract_names(configur
     (call,) = insights.calls
     assert call["from"].isoformat() == "2026-10-01T00:00:00+00:00"
     assert (call["media_product_type"], call["sort_by"], call["to"]) == ("REELS", "views", None)
+    assert call["top_n"] == 5
 
 
 def test_content_insights_need_from_and_an_allowed_user(configured):
     insights = _Insights(error=InvalidArgument("sortBy must be one of ..."))
     with _client(_Search(), insights) as client:
         assert _insights(client, {}).status_code == 422
+        assert _insights(client, {"from": "2026-10-01", "topN": "five"}).status_code == 422
         assert _insights(client, {"from": "2026-10-01"}, token="stranger").status_code == 403
         assert _insights(client, {"from": "2026-10-01", "sortBy": "x"}).status_code == 400

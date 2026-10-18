@@ -62,3 +62,6 @@ content/output/*
 !content/input/.gitkeep
 !content/output/.gitkeep
 .decor-cache/
+
+# Data exports (e.g. Meta Business Suite CSVs in specs/meta)
+*.csv

@@ -25,19 +25,23 @@ Inputs:
 - mediaProductType: string, optional, FEED, STORY, REELS or AD
   - type of posted content
 - sortBy: string, optional
-  - sorting parameter. One of views|reach|totalInteractions|shares|reposts. Specify column in collection to sort results
+  - sorting parameter. One of views|totalInteractions|shares|reposts|likes|saved. Specify column names seperate by comma to sort results. Maximum three sort orders are allowed.
+- topN: integer, optional, at least 1
+  - number of items to return, the first N after sorting; all matching items when absent
 
 Output:
 - ContentInsights, collection of content items with insights
 
 Errors:
-- InvalidArgument — `to` is before `from`, or mediaType, mediaProductType or sortBy is not one of its allowed values
+- InvalidArgument — `to` is before `from`, mediaType, mediaProductType or a sortBy column is not one of its allowed values, sortBy has more than three columns or one twice, or topN is below 1
 
 Behavior:
 - Use `BigQueryClient` infrastructure class to access BigQuery
 - Apply all nonempty filtering parameters when building query; empty ones are ignored
 - `from` bounds the table's required partition filter on `timestamp`
-- Sort descending by the column in sortBy; without sortBy, newest first. Rows without a value in the sort column come last
+- Sort descending by the columns in sortBy, in the given order: each column only breaks ties in the ones before it, and the newest break any ties left. Without sortBy, newest first. Rows without a value in a sort column come after those with one
+- Spaces around the commas in sortBy are ignored
+- With topN, return only the first topN rows of that order (BigQuery `LIMIT`)
 - Response contains array of items, errorCode and errorMessage fields
 - A BigQuery failure is returned in errorCode / errorMessage with empty items, not raised
 - Must not modify stored rows
@@ -55,11 +59,11 @@ Implemented by the story webhook service (`search-api/src/webhook`), not by this
 
 ## API
 
-`POST /contentinsights` on the search API, with the same caller checks as `/searchcontext`.
+`POST /searchContentInsights` on the search API, with the same caller checks as `/searchcontent`.
 
-- Body: `from`, `to`, `mediaType`, `mediaProductType`, `sortBy` as above
+- Body: `from`, `to`, `mediaType`, `mediaProductType`, `sortBy`, `topN` as above
 - 200: ContentInsights, including when BigQuery failed (errorCode set)
-- 400: InvalidArgument; 422: `from` missing or not a datetime
+- 400: InvalidArgument; 422: `from` missing or not a datetime, or `topN` not an integer
 
 ## Data Contracts
 
@@ -76,4 +80,4 @@ Implemented by the story webhook service (`search-api/src/webhook`), not by this
 
 ## Open Questions
 
-- No limit on the number of items: a wide `from`/`to` range returns every row in it.
+- Without topN there is no limit on the number of items: a wide `from`/`to` range returns every row in it.

@@ -18,7 +18,7 @@ npm run build
 ## How a search travels
 
 ```
-browser ──cookie──▶ /api/search (this app) ──▶ search API /searchcontext
+browser ──cookie──▶ /api/search (this app) ──▶ search API /searchcontent
                      Authorization: Bearer <service token>   checked by Cloud Run
                      X-User-Token: <user's Google ID token>  checked by the API
 ```

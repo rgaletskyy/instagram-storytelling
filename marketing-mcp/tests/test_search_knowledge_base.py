@@ -75,7 +75,7 @@ async def test_all_parameters_reach_the_api_under_its_names(api):
         }
     )
     (request,) = api["requests"]
-    assert request["url"] == "https://hd-api.example.run.app/searchcontext"
+    assert request["url"] == "https://hd-api.example.run.app/searchcontent"
     assert request["body"] == {
         "query": "бальзам для лап",
         "productSku": "ND-PAWS-01",

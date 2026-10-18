@@ -398,7 +398,7 @@ one Jev is torn over can search two or all three.
 (a Next.js app). Spec: `specs/search-api.md`.
 
 ```
-POST /searchcontext
+POST /searchcontent
 Authorization: Bearer <ID token for the portal's service account>   -- checked by Cloud Run
 X-User-Token:  <the signed-in user's Google ID token>              -- checked by the API
 {"query": "шампунь для шпіца", "hasDog": true, "type": "лайфстайл", "productSku": "ND-PAWS-01"}

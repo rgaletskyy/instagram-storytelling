@@ -181,7 +181,7 @@ async def test_query_filters_by_the_given_values_and_sorts_most_first():
     client = _Client(rows=[_Row(id="a")])
 
     rows = await BigQueryClient(client, dataset="ds").query_organic(
-        NOW, NOW, media_product_type="REELS", sort_by="views"
+        NOW, NOW, media_product_type="REELS", sort_by=["views"]
     )
 
     ((sql, params),) = client.calls
@@ -192,17 +192,36 @@ async def test_query_filters_by_the_given_values_and_sorts_most_first():
         in sql
     )
     assert "mediaType = @mediaType" not in sql
-    assert sql.endswith("ORDER BY `views` DESC NULLS LAST")
+    assert sql.endswith("ORDER BY `views` DESC NULLS LAST, `timestamp` DESC")
     assert params["mediaProductType"].value == "REELS"
+
+
+async def test_query_sorts_by_each_column_in_turn():
+    client = _Client()
+    await BigQueryClient(client).query_organic(NOW, NOW, sort_by=["likes", "saved", "shares"])
+
+    assert client.calls[0][0].endswith(
+        "ORDER BY `likes` DESC NULLS LAST, `saved` DESC NULLS LAST, `shares` DESC NULLS LAST, "
+        "`timestamp` DESC"
+    )
 
 
 async def test_query_sorts_newest_first_by_default_and_refuses_unknown_columns():
     client = _Client()
     await BigQueryClient(client).query_organic(NOW, NOW)
-    assert client.calls[0][0].endswith("ORDER BY `timestamp` DESC NULLS LAST")
+    assert client.calls[0][0].endswith("ORDER BY `timestamp` DESC")
 
     with pytest.raises(ValueError):
-        await BigQueryClient(client).query_organic(NOW, NOW, sort_by="views; DROP TABLE x")
+        await BigQueryClient(client).query_organic(NOW, NOW, sort_by=["views; DROP TABLE x"])
+
+
+async def test_query_returns_at_most_the_limit():
+    client = _Client()
+    await BigQueryClient(client).query_organic(NOW, NOW, sort_by=["views"], limit=5)
+
+    ((sql, params),) = client.calls
+    assert sql.endswith("ORDER BY `views` DESC NULLS LAST, `timestamp` DESC LIMIT @limit")
+    assert params["limit"].value == 5
 
 
 async def test_bigquery_errors_carry_their_reason():
@@ -225,15 +244,20 @@ async def test_the_service_passes_filters_and_returns_items_in_contract_names():
     bigquery = _BigQuery(rows=[row])
 
     result = await ContentInsightsService(bigquery).query_content_insights(
-        datetime(2026, 10, 1), media_type="VIDEO", media_product_type="REELS", sort_by="views"
+        datetime(2026, 10, 1),
+        media_type="VIDEO",
+        media_product_type="REELS",
+        sort_by="likes, saved",
+        top_n=3,
     )
 
     (query,) = bigquery.queries
     assert query["since"] == datetime(2026, 10, 1, tzinfo=UTC)
     assert query["until"].tzinfo is not None
     assert (query["media_type"], query["media_product_type"], query["sort_by"]) == (
-        "VIDEO", "REELS", "views",
+        "VIDEO", "REELS", ["likes", "saved"],
     )  # fmt: skip
+    assert query["limit"] == 3
     body = result.model_dump(by_alias=True)
     assert body["errorCode"] is None
     item = body["items"][0]
@@ -248,10 +272,14 @@ async def test_the_service_passes_filters_and_returns_items_in_contract_names():
 @pytest.mark.parametrize(
     "kwargs",
     [
-        {"sort_by": "likes"},
+        {"sort_by": "reach"},
+        {"sort_by": "likes,comments"},
+        {"sort_by": "likes,likes"},
+        {"sort_by": "views,likes,saved,shares"},
         {"media_type": "REEL"},
         {"media_product_type": "feed"},
         {"to": datetime(2026, 9, 1, tzinfo=UTC)},
+        {"top_n": 0},
     ],
 )
 async def test_invalid_parameters_are_refused_before_querying(kwargs):
@@ -261,6 +289,12 @@ async def test_invalid_parameters_are_refused_before_querying(kwargs):
             datetime(2026, 10, 1, tzinfo=UTC), **kwargs
         )
     assert bigquery.queries == []
+
+
+async def test_without_sort_by_no_columns_are_passed():
+    bigquery = _BigQuery()
+    await ContentInsightsService(bigquery).query_content_insights(NOW, sort_by=" , ")
+    assert bigquery.queries[0]["sort_by"] == []
 
 
 async def test_a_bigquery_failure_comes_back_in_the_error_fields():

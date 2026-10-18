@@ -25,7 +25,7 @@ async function serviceToken(): Promise<string | undefined> {
 
 export type ApiResponse = { status: number; body: unknown };
 
-/** POST /searchcontext as the signed-in user. */
+/** POST /searchcontent as the signed-in user. */
 export async function searchContext(
   query: string,
   filters: SearchFilters,
@@ -38,7 +38,7 @@ export async function searchContext(
   const token = await serviceToken();
   if (token) headers.Authorization = `Bearer ${token}`;
 
-  const response = await fetch(new URL("/searchcontext", requireEnv("API_URL")), {
+  const response = await fetch(new URL("/searchcontent", requireEnv("API_URL")), {
     method: "POST",
     headers,
     body: JSON.stringify({ query, ...filters }),

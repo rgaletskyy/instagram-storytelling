@@ -50,6 +50,7 @@ class InsightsRequest(BaseModel):
     media_type: str | None = Field(default=None, alias="mediaType")
     media_product_type: str | None = Field(default=None, alias="mediaProductType")
     sort_by: str | None = Field(default=None, alias="sortBy")
+    top_n: int | None = Field(default=None, alias="topN")
 
 
 class _CloudLoggingFormatter(logging.Formatter):
@@ -91,13 +92,13 @@ def create_app(
     app = FastAPI(title="HealthyDoggo API", lifespan=lifespan)
     app.state.auth = auth
 
-    @app.post("/searchcontext", response_model=SearchResult, response_model_by_alias=True)
+    @app.post("/searchcontent", response_model=SearchResult, response_model_by_alias=True)
     async def search_context(body: SearchRequest, user: Annotated[User, Depends(current_user)]):
         started = time.perf_counter()
         fields = {
             "user": user.email,
             "caller": "service" if user.is_service else "user",
-            "action": "searchcontext",
+            "action": "searchcontent",
             "hasDog": body.has_dog,
             "type": body.content_type,
             "productSku": body.product_sku,
@@ -137,18 +138,21 @@ def create_app(
         )
         return result
 
-    @app.post("/contentinsights", response_model=ContentInsights, response_model_by_alias=True)
+    @app.post(
+        "/searchContentInsights", response_model=ContentInsights, response_model_by_alias=True
+    )
     async def content_insights(body: InsightsRequest, user: Annotated[User, Depends(current_user)]):
         started = time.perf_counter()
         fields = {
             "user": user.email,
             "caller": "service" if user.is_service else "user",
-            "action": "contentinsights",
+            "action": "searchContentInsights",
             "from": body.from_,
             "to": body.to,
             "mediaType": body.media_type,
             "mediaProductType": body.media_product_type,
             "sortBy": body.sort_by,
+            "topN": body.top_n,
         }
         try:
             result = await app.state.insights.query_content_insights(
@@ -157,6 +161,7 @@ def create_app(
                 media_type=body.media_type,
                 media_product_type=body.media_product_type,
                 sort_by=body.sort_by,
+                top_n=body.top_n,
             )
         except InvalidArgument as exc:
             _log(logging.INFO, "rejected", fields, started, status=400)

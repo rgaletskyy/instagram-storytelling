@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+from collections.abc import Sequence
 from datetime import datetime
 
 from google.api_core import exceptions as google_exceptions
@@ -108,15 +109,18 @@ class BigQueryClient:
         until: datetime,
         media_type: str | None = None,
         media_product_type: str | None = None,
-        sort_by: str | None = None,
+        sort_by: Sequence[str] = (),
+        limit: int | None = None,
     ) -> list[dict]:
         """Rows with `since <= timestamp <= until`, most of `sort_by` first.
 
-        `sort_by` must be a column name; without it, the newest come first.
-        Rows missing the sort value come last.
+        `sort_by` are column names, each breaking the ties of the one before;
+        rows missing a sort value come last, and the newest break what ties
+        remain. At most `limit` rows when given.
         """
-        if sort_by is not None and sort_by not in ORGANIC_COLUMNS:
-            raise ValueError(f"unknown column {sort_by!r}")
+        unknown = [c for c in sort_by if c not in ORGANIC_COLUMNS]
+        if unknown:
+            raise ValueError(f"unknown columns {unknown!r}")
         where = ["timestamp >= @since", "timestamp <= @until"]
         params = [
             bigquery.ScalarQueryParameter("since", "TIMESTAMP", since),
@@ -132,8 +136,12 @@ class BigQueryClient:
             )
         sql = (
             f"SELECT * FROM `{{organic}}` WHERE {' AND '.join(where)} "
-            f"ORDER BY `{sort_by or 'timestamp'}` DESC NULLS LAST"
+            f"ORDER BY {', '.join(f'`{c}` DESC NULLS LAST' for c in sort_by)}"
+            f"{', ' if sort_by else ''}`timestamp` DESC"
         )
+        if limit is not None:
+            sql += " LIMIT @limit"
+            params.append(bigquery.ScalarQueryParameter("limit", "INT64", limit))
         return [dict(row.items()) for row in await self._run(sql, params)]
 
     def _bigquery(self) -> bigquery.Client:

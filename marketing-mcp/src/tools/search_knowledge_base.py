@@ -133,7 +133,7 @@ async def search_knowledge_base(
     try:
         async with httpx.AsyncClient(timeout=TIMEOUT) as client:
             response = await client.post(
-                f"{api_url.rstrip('/')}/searchcontext", json=body, headers=headers
+                f"{api_url.rstrip('/')}/searchcontent", json=body, headers=headers
             )
     except httpx.HTTPError as exc:
         raise ToolError(f"the search API could not be reached: {exc}") from exc
