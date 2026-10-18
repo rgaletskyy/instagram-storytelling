@@ -42,7 +42,7 @@ def api(monkeypatch):
 
     real = httpx.AsyncClient
     monkeypatch.setattr(
-        tool.httpx,
+        tool.search_api.httpx,
         "AsyncClient",
         lambda **kwargs: real(transport=httpx.MockTransport(handler), **kwargs),
     )
@@ -56,8 +56,8 @@ async def _call(arguments):
 
 async def test_the_tool_is_listed_with_the_spec_parameters():
     async with Client(_server()) as client:
-        (listed,) = await client.list_tools()
-    assert listed.name == "search_knowledge_base"
+        tools = {t.name: t for t in await client.list_tools()}
+    listed = tools["search_knowledge_base"]
     props = listed.input_schema["properties"]
     assert set(props) == {"query", "productSku", "hasDog", "contentType"}
     assert listed.input_schema["required"] == ["query"]
@@ -97,7 +97,7 @@ async def test_without_an_audience_no_service_token_is_sent(api):
 
 async def test_with_an_audience_the_service_token_is_sent(api, monkeypatch):
     monkeypatch.setenv("API_AUDIENCE", "https://hd-api.example.run.app")
-    monkeypatch.setattr(tool, "_service_token", lambda audience: f"token-for-{audience}")
+    monkeypatch.setattr(tool.search_api, "_service_token", lambda audience: f"token-for-{audience}")
     await _call({"query": "бальзам"})
     assert api["requests"][0]["headers"]["authorization"] == (
         "Bearer token-for-https://hd-api.example.run.app"

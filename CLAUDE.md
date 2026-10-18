@@ -60,9 +60,9 @@ Tests fake `auth.verify_google_id_token` and pass a fake service to `create_app`
 
 ### Marketing MCP (`marketing-mcp/`)
 
-FastMCP 4 server in `src/mcp-server.py` (hyphenated, so run as a script and tests load it by path; `pythonpath = ["src"]`), tools under `src/tools/`, each exporting the function plus `NAME`/`DESCRIPTION`. Only `search_knowledge_base` exists; the spec's image, copy, slide and validation tools are still to come.
+FastMCP 4 server in `src/mcp-server.py` (hyphenated, so run as a script and tests load it by path; `pythonpath = ["src"]`), tools under `src/tools/`, each exporting the function plus `NAME`/`DESCRIPTION`. Only `search_knowledge_base` and `search_content_insights` exist; the spec's image, copy, slide and validation tools are still to come.
 
-- **Outbound:** `search_knowledge_base` calls the search API over HTTP (`API_URL`) as its own service account (metadata-server ID token when `API_AUDIENCE` is set), with no user token, and returns the API's JSON as is; API errors become tool errors.
+- **Outbound:** both tools call the search API over HTTP (`API_URL`, `/searchcontent` and `/searchContentInsights`) through `src/tools/search_api.py`, as the server's own service account (metadata-server ID token when `API_AUDIENCE` is set), with no user token, and return the API's JSON as is; API errors (and an insights `errorCode`) become tool errors.
 - **Inbound:** Claude Desktop reaches it as a remote connector from Anthropic's side, so Cloud Run IAM can't gate it. Over HTTP, `src/auth.py` is the gate: FastMCP's Google OAuth proxy, subclassed to refuse any email that is unverified or not in `ALLOWED_USERS`. The server won't start without `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `MCP_BASE_URL`, `MCP_JWT_SIGNING_KEY`, `ALLOWED_USERS`. Proxy state is stored encrypted in a separate Firestore database (`AUTH_FIRESTORE_DATABASE`, default `mcp-auth`), never the knowledge-base one, so it survives restarts and works across instances. `stateless_http=True` for the same reason. Stdio skips auth.
 
 ## Local-only data

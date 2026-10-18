@@ -1,9 +1,10 @@
 # hd-marketing-mcp
 
 An MCP server for HealthyDoggo's SMM managers. Spec:
-`../specs/marketing-mcp.md`. So far it has one tool, `search_knowledge_base`,
-which finds products, Instagram conversations and content items through the
-search API (`../search-api`).
+`../specs/marketing-mcp.md`. So far it has two tools, both calling the search
+API (`../search-api`): `search_knowledge_base` finds products, Instagram
+conversations and content items, and `search_content_insights` ranks the
+account's Instagram posts, reels and stories by their insights.
 
 ```bash
 uv sync
@@ -23,6 +24,23 @@ MCP_TRANSPORT=stdio uv run python src/mcp-server.py   # for a local MCP client
 
 It returns the API's result as is: `products`, `instagramMessages`,
 `content`. An API error comes back as a tool error carrying the API's message.
+
+## search_content_insights
+
+Calls `POST /searchContentInsights`. The parameter descriptions tell the model
+how to turn a request like "top 5 posts from May by likes and saves" into them.
+
+| Parameter | |
+|---|---|
+| `from` | required; ISO 8601 datetime, start of the publication period |
+| `to` | optional; end of the period, inclusive; now when left out |
+| `mediaProductType` | optional; `FEED`, `STORY`, `REELS` or `AD` |
+| `mediaType` | optional; `IMAGE`, `VIDEO` or `CAROUSEL_ALBUM` |
+| `sortBy` | optional; up to three of `views`, `totalInteractions`, `likes`, `saved`, `shares`, `reposts`, comma-separated; newest first when left out |
+| `topN` | optional; at least 1, the first N after sorting |
+
+It returns the API's `items`. An API error, or a BigQuery failure the API
+reports in `errorCode`, comes back as a tool error.
 
 ## Signing in
 

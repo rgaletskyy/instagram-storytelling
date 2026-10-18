@@ -45,7 +45,8 @@ Passed to the search API's `POST /searchContentInsights` as is (see [search-api.
 
 - from: string, required, ISO 8601 datetime (e.g. `2026-05-01T00:00:00`). Start of the period in which the content was published, inclusive.
   Resolve the period the user names into exact dates: "May" = from the 1st of May 00:00:00; "previous week" = Monday 00:00:00 of last week; "in 2025" = 2025-01-01T00:00:00.
-  Use the current year when the user gives none. Without a timezone, taken as UTC.
+  Dates written as 01.04.2026 are day.month.year. Use the current year when the user gives none, or the previous one if that month has not come yet.
+  Without any period, use the last 30 days. Without a timezone, taken as UTC.
 - to: string, optional, ISO 8601 datetime. End of the publication period, inclusive, e.g. `2026-05-31T23:59:59` for "May".
   Leave empty when the period runs up to now ("since March", "last 30 days"). Must not be before `from`.
 - mediaProductType: Enum item ["FEED", "STORY", "REELS", "AD"], where the content was published.

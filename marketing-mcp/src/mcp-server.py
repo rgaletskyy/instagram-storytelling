@@ -7,7 +7,8 @@ Over HTTP every request needs a Google sign-in from an allowlisted account
 (see auth.py), and the server will not start without it configured. Over
 stdio there is no network to guard: whoever starts the process is the user.
 
-Only search_knowledge_base exists so far; the spec's other tools come later.
+Only search_knowledge_base and search_content_insights exist so far; the spec's
+other tools come later.
 """
 
 from __future__ import annotations
@@ -17,17 +18,24 @@ import os
 from fastmcp import FastMCP
 
 import auth
+from tools import search_content_insights as insights_tool
 from tools import search_knowledge_base as search_tool
 
 mcp = FastMCP(
     name="hd-marketing-mcp",
     instructions=(
         "Tools for HealthyDoggo's SMM managers: find products, Instagram conversations "
-        "and photos or videos in the content library. Creaete or edit images, write copy text for psots, generate slides for posts and stories, validate content."
+        "and photos or videos in the content library, and see how the account's Instagram "
+        "posts, reels and stories performed. Creaete or edit images, write copy text for psots, generate slides for posts and stories, validate content."
     ),
 )
 mcp.tool(
     search_tool.search_knowledge_base, name=search_tool.NAME, description=search_tool.DESCRIPTION
+)
+mcp.tool(
+    insights_tool.search_content_insights,
+    name=insights_tool.NAME,
+    description=insights_tool.DESCRIPTION,
 )
 
 
