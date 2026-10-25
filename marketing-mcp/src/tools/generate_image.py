@@ -193,8 +193,8 @@ async def generate_image(
         Field(
             description=(
                 "https links to sample images the new image must follow (a dog, a scene, a "
-                "style), as the user gave them. Google Drive links work when shared with "
-                "anyone who has the link."
+                "style), as the user gave them: JPEG, PNG, WebP or HEIC. Google Drive "
+                "links work when shared with anyone who has the link."
             )
         ),
     ] = None,

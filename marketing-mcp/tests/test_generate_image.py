@@ -95,6 +95,39 @@ async def test_a_download_is_shrunk_to_an_rgb_jpeg():
     assert max(picture.size) == image_generation_service.REFERENCE_MAX_SIDE
 
 
+def _heic(size=(400, 300)) -> bytes:
+    from pillow_heif import register_heif_opener
+
+    register_heif_opener()
+    out = io.BytesIO()
+    PILImage.new("RGB", size, (200, 10, 10)).save(out, format="HEIF")
+    return out.getvalue()
+
+
+@pytest.mark.parametrize("content_type", ["image/heic", "application/octet-stream"])
+async def test_a_heic_photo_is_converted_to_jpeg(content_type):
+    # Drive serves HEIC as application/octet-stream.
+    files = {"https://x.test/a.heic": _image(_heic(), content_type)}
+    reference = await ImageGenerator(http_transport=_downloads(files)).download(
+        "https://x.test/a.heic"
+    )
+    picture = PILImage.open(io.BytesIO(reference.data))
+    assert (picture.format, picture.size) == ("JPEG", (400, 300))
+
+
+async def test_the_exif_rotation_of_a_phone_photo_is_applied():
+    image = PILImage.new("RGB", (400, 300), (10, 20, 30))
+    exif = image.getexif()
+    exif[0x0112] = 6  # Orientation: rotate 90 degrees clockwise to display
+    out = io.BytesIO()
+    image.save(out, format="JPEG", exif=exif)
+    files = {"https://x.test/a.jpg": _image(out.getvalue(), "image/jpeg")}
+    reference = await ImageGenerator(http_transport=_downloads(files)).download(
+        "https://x.test/a.jpg"
+    )
+    assert PILImage.open(io.BytesIO(reference.data)).size == (300, 400)
+
+
 @pytest.mark.parametrize(
     ("url", "files", "message"),
     [
@@ -106,6 +139,11 @@ async def test_a_download_is_shrunk_to_an_rgb_jpeg():
             "not an image",
         ),
         ("https://x.test/a.png", {"https://x.test/a.png": _image(b"junk")}, "not a readable image"),
+        (
+            "https://x.test/a.bin",
+            {"https://x.test/a.bin": _image(b"junk", "application/octet-stream")},
+            "not a readable image",
+        ),
     ],
 )
 async def test_unusable_downloads_are_refused(url, files, message):

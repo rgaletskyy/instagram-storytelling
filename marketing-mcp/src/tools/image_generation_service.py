@@ -53,6 +53,9 @@ SUBJECT_FIDELITY_RULE = (
 )
 
 _DRIVE_ID = re.compile(r"(?:/d/|[?&]id=)([\w-]{10,})")
+# Drive, S3 and the like serve HEIC (iPhone photos) as generic binary; whether
+# the bytes are an image is then up to Pillow, in _shrink.
+BINARY_TYPES = ("application/octet-stream", "binary/octet-stream")
 
 
 class ImageGenerationError(RuntimeError):
@@ -84,17 +87,27 @@ def direct_url(url: str) -> str:
     return url
 
 
+def _may_be_image(content_type: str) -> bool:
+    """An image type, or a generic binary one that may hold an image."""
+    media_type = content_type.split(";")[0].strip().lower()
+    return media_type.startswith("image/") or media_type in BINARY_TYPES
+
+
 def _shrink(data: bytes) -> bytes:
     """The picture as an RGB JPEG no larger than REFERENCE_MAX_SIDE on its longest side."""
-    from PIL import Image, UnidentifiedImageError
+    from PIL import Image, ImageOps, UnidentifiedImageError
     from pillow_heif import register_heif_opener
 
+    # HEIC/HEIF, as iPhones save photos.
     register_heif_opener()
     try:
         image = Image.open(io.BytesIO(data))
         image.load()
     except (UnidentifiedImageError, OSError) as exc:
         raise ImageGenerationError("not a readable image") from exc
+    # Phone photos are stored sideways with an EXIF rotation; apply it, since
+    # the JPEG written below carries no EXIF.
+    image = ImageOps.exif_transpose(image)
     image.thumbnail((REFERENCE_MAX_SIDE, REFERENCE_MAX_SIDE))
     if image.mode != "RGB":
         # Transparent cut-outs go on white, not black.
@@ -138,7 +151,7 @@ class ImageGenerator:
                 if response.status_code != 200:
                     raise ImageGenerationError(f"{url}: download failed ({response.status_code})")
                 content_type = response.headers.get("content-type", "")
-                if not content_type.startswith("image/"):
+                if not _may_be_image(content_type):
                     raise ImageGenerationError(
                         f"{url}: not an image ({content_type or 'no content type'}); "
                         "a Drive file must be shared with anyone who has the link"

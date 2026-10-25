@@ -59,7 +59,9 @@ Each product is looked up through `/searchcontent` among the `продуктов
 content: a SKU is first resolved to the product's name, then up to two image
 files labelled with that name are taken. Their Drive links, and the samples,
 are downloaded without sign-in, so the files must be shared with anyone who
-has the link. References are shrunk to 1536 px JPEGs (at most 8) and sent to
+has the link. JPEG, PNG, WebP and HEIC/HEIF (iPhone photos) are accepted;
+Drive serves HEIC as `application/octet-stream`, so a generic binary download
+is accepted too and Pillow decides whether it is an image. References are shrunk to 1536 px JPEGs (at most 8) and sent to
 Gemini with a rule to keep the products, dogs and people as photographed
 (`src/tools/image_generation_service.py`). The tool returns the image as image
 content, plus a text note when a product had no photo or a photo was skipped.
