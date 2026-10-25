@@ -33,15 +33,12 @@ dev = [
 ]
 
 [project.scripts]
-instagram-marketing-agent = "instagram_marketing_agent.cli:main"
 image-index = "routines.image_indexer.image_index:main"
-authorize-drive = "instagram_marketing_agent.authorize_drive:main"
 rag-index = "routines.vector_indexer.indexer:main"
 insights-sync = "routines.insights_sync.sync:main"
 
 [tool.hatch.build.targets.wheel]
 packages = [
-    "src/instagram_marketing_agent",
     "infrastructure",
     "search-api/src/domain",
     "routines",
@@ -57,10 +54,6 @@ src = [".", "src", "search-api/src", "tests"]
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "SIM"]
 ignore = ["E501"]
-
-[tool.ruff.lint.isort]
-# Its config module is gone, so ruff cannot tell on its own that it is ours.
-known-first-party = ["instagram_marketing_agent"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

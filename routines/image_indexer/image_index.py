@@ -21,10 +21,6 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import httpx
-from openpyxl import Workbook, load_workbook
-from pydantic import BaseModel, Field
-
-from infrastructure import drive, ffmpeg
 from instagram_marketing_agent import llm
 from instagram_marketing_agent.config import (
     CLAUDE_DESCRIBE_MODEL,
@@ -34,6 +30,10 @@ from instagram_marketing_agent.config import (
     RESOURCES_DIR,
     VIDEO_SUFFIXES,
 )
+from openpyxl import Workbook, load_workbook
+from pydantic import BaseModel, Field
+
+from infrastructure import drive, ffmpeg
 
 logger = logging.getLogger(__name__)
 
