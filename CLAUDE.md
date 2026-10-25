@@ -69,4 +69,4 @@ FastMCP 4 server in `src/mcp-server.py` (hyphenated, so run as a script and test
 
 ## Local-only data
 
-Gitignored and absent in a fresh clone: `.env`, `content/input|output/*`, `src/resources/indices/` (the spreadsheets `rag-index` reads), `src/resources/products.xlsx`, `src/resources/images_index/`, `.tools/`, `.decor-cache/`. `src/resources/smm_composition_rules.md` is a brand rule document left over from the legacy pipeline; the slide design guidelines and the decor PNGs now live in `marketing-mcp/src/resources/` (`infrastructure/anthropic.py` reads the guidelines from there).
+Gitignored and absent in a fresh clone: `.env`, `content/input|output/*`, `src/resources/indices/` (the spreadsheets `rag-index` reads), `src/resources/products.xlsx`, `src/resources/images_index/`, `.tools/`, `.decor-cache/`. The brand rule documents (`slide-design-guidelines.md`, `smm_composition_rules.md`) and the decor PNGs live in `marketing-mcp/src/resources/`; `infrastructure/anthropic.py` reads the documents from there.

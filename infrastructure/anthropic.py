@@ -13,11 +13,9 @@ from anthropic import AsyncAnthropic
 
 from infrastructure.env import load_dotenv
 
-RESOURCES_DIR = Path(__file__).resolve().parents[1] / "src" / "resources"
-# The MCP is the guidelines' live user, so they sit with it.
-DESIGN_GUIDELINES = (
-    Path(__file__).resolve().parents[1] / "marketing-mcp/src/resources/slide-design-guidelines.md"
-)
+# The MCP is the rule documents' live user, so they sit with it.
+RESOURCES_DIR = Path(__file__).resolve().parents[1] / "marketing-mcp" / "src" / "resources"
+DESIGN_GUIDELINES = RESOURCES_DIR / "slide-design-guidelines.md"
 STORYTELLING_RULES = RESOURCES_DIR / "smm_composition_rules.md"
 
 _anthropic: AsyncAnthropic | None = None
