@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pydantic import BaseModel
 
-from infrastructure.base import CAST_RULE, _rules, anthropic_client
+from infrastructure.anthropic import CAST_RULE, _rules, anthropic_client
 
 from ..config import CLAUDE_SCRIPT_MODEL, MAX_SLIDES, MIN_SLIDES
 from ..models import CampaignScript, Product, SlideSpec

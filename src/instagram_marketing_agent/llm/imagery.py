@@ -6,7 +6,7 @@ import base64
 import mimetypes
 from pathlib import Path
 
-from infrastructure.base import gemini_client
+from infrastructure.gemini import gemini_client
 
 from ..config import GEMINI_IMAGE_MODEL, STORY_FORMAT
 

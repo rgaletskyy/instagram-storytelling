@@ -11,14 +11,15 @@ redundant `as` spelling is what marks a re-export rather than an oversight.
 
 from __future__ import annotations
 
-from infrastructure.base import _MAX_IMAGE_BYTES as _MAX_IMAGE_BYTES
-from infrastructure.base import CAST_RULE, anthropic_client, gemini_client
-from infrastructure.base import _api_ready as _api_ready
-from infrastructure.base import _cast_check as _cast_check
-from infrastructure.base import _cast_clause as _cast_clause
-from infrastructure.base import _cast_failures as _cast_failures
-from infrastructure.base import _image_block as _image_block
-from infrastructure.base import _sniff as _sniff
+from infrastructure.anthropic import _MAX_IMAGE_BYTES as _MAX_IMAGE_BYTES
+from infrastructure.anthropic import CAST_RULE, anthropic_client
+from infrastructure.anthropic import _api_ready as _api_ready
+from infrastructure.anthropic import _cast_check as _cast_check
+from infrastructure.anthropic import _cast_clause as _cast_clause
+from infrastructure.anthropic import _cast_failures as _cast_failures
+from infrastructure.anthropic import _image_block as _image_block
+from infrastructure.anthropic import _sniff as _sniff
+from infrastructure.gemini import gemini_client
 
 from ..config import GEMINI_IMAGE_MODEL as GEMINI_IMAGE_MODEL
 from .describe import _ImageDescription as _ImageDescription

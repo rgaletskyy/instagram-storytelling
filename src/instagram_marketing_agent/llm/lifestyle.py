@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from infrastructure.base import (
+from infrastructure.anthropic import (
     CAST_RULE,
     _cast_check,
     _cast_failures,

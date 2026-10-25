@@ -11,7 +11,7 @@ from pathlib import Path
 
 from pydantic import BaseModel, Field
 
-from infrastructure.base import _guidelines, _image_block, _rules, anthropic_client
+from infrastructure.anthropic import _guidelines, _image_block, _rules, anthropic_client
 
 from ..config import (
     BODY_MAX_PX,

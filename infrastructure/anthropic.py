@@ -1,7 +1,7 @@
-"""What every model call needs: the clients, the rule documents, the images.
+"""What every Claude call needs: the client, the rule documents, the images.
 
 Kept apart from the calls themselves so slides.py and lifestyle.py can share it
-without importing each other.
+without importing each other. Gemini's client is in gemini.py.
 """
 
 from __future__ import annotations
@@ -18,7 +18,6 @@ DESIGN_GUIDELINES = RESOURCES_DIR / "slide-design-guidelines.md"
 STORYTELLING_RULES = RESOURCES_DIR / "smm_composition_rules.md"
 
 _anthropic: AsyncAnthropic | None = None
-_gemini = None
 
 
 def anthropic_client() -> AsyncAnthropic:
@@ -27,21 +26,6 @@ def anthropic_client() -> AsyncAnthropic:
         load_dotenv()
         _anthropic = AsyncAnthropic()
     return _anthropic
-
-
-def gemini_client():
-    """Built lazily and cached.
-
-    The constructor requires an API key, and the instance must be held: an
-    unreferenced client is garbage-collected and closed mid-request.
-    """
-    global _gemini
-    if _gemini is None:
-        from google import genai
-
-        load_dotenv()
-        _gemini = genai.Client()
-    return _gemini
 
 
 # Slides and frames are generated independently, so unless one person is

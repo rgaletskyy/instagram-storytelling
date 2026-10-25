@@ -6,7 +6,8 @@ from pathlib import Path
 
 from pydantic import BaseModel
 
-from infrastructure.base import _api_ready, _image_block, anthropic_client, gemini_client
+from infrastructure.anthropic import _api_ready, _image_block, anthropic_client
+from infrastructure.gemini import gemini_client
 
 from ..config import (
     DEEPSEEK_MODEL_PREFIX,
