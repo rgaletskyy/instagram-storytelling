@@ -4,13 +4,13 @@ hd-marketing-mcp server exposes tools to simplify work for SMM managers via sear
 MCP will have next functionality:
 - helps to find content inside repository of contents. Uses Firectore vector index for search.
 - search content insights via customers query. E.g - top 5 posts from May based on customers interaction.
-
 - generate copy/caption for post according to brand rules.
 - validate captions and return comments, improvements.
+
+- generate image(s) from scratch using user input and/or samples
+
 - generate slide for story telling containing text, image and brand elements
 
-- generate image(s) from scratch using prompts and samples
-- modify or improve existing image
 - create script for story telling
 - validate slide and return comments
 
@@ -74,14 +74,28 @@ Passed to the search API's `POST /searchContentInsights` as is (see [search-api.
   "the post with the most views" = 1. Leave empty when the user gives no number and asks for everything in the period.
 
 
-### generate_caption
-
-### validate_caption
-
-
-### modify_image
-
 ### generate_image
+
+Invoke this tool when user asks to generate image based on his description of the scene and elements that should be present on it. For example `собака сидить біля баночик з вітамінами`, `собака сидить у ванні, рука тримає шампунь Sebsitive Skin біля мордочки собаки`
+
+
+#### parameters
+
+- subject: string, A standalone subject that describes what should be on imange. Rewrite the customer's message so it makes sense without the conversation: replace pronouns with the product or topic they refer to, include relevant details mentioned earlier (dog age, breed, problem, lifestyle or promo photos), and drop greetings and filler. Pay attention on 
+description what should be present on content item. Extract most important descriptions customer provides for desired image.
+- products: array of products that has to be present on image. Extract exact SKU if possible from conversation. If sku not presented, include product name or names mentioned in conversation.
+- contentType: string, defines type of content. One of `Product photo`, `Lifestyle`, `Studio photoshoot`, `UGC`
+- composition: string, describes how elements are positioned and framed. One of `Centered`, `Rule of Thirds`, `Flat Lay`, `Close-up`, `Wide`
+- cameraLevel: string, defines the position of the camera relative to the subject. It determines whether the viewer sees the product from above, below, directly in front, or from the side. One of `Eye Level`, `High Angle`, `Top-Down`, `Low Angle`, `Ground Level`
+- aspectRatio, string, Describes aspect ration for content - portrait (posts), square (posts), full screen(story, reels) One of `9:16`, `1:1`, `4:5`; `4:5` when not given
+- sampleUrls, string[], array if urls popinting to sample images, that have to be considered when generating new image
+
+#### behaviour
+
+- Each entry of `products` is looked up with `POST /searchcontent` (type `продуктове`, `productSku` = the entry); a SKU is resolved to the product's name, and up to two image files whose `product` matches that name are used as references.
+- Product photos and `sampleUrls` are downloaded (Drive share links via their download link, shared by link), shrunk and attached to the Gemini request, at most 8 in all, with a rule to reproduce products, dogs and people as photographed.
+- Returns the image as image content in the chat, plus a text note when a product had no photo or a photo was skipped. A sample that cannot be downloaded, or no image from Gemini, is a tool error.
+
 
 ### create_storytelling_script
 

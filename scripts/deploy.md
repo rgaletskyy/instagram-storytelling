@@ -169,7 +169,7 @@ gcloud projects add-iam-policy-binding $PROJECT \
   --condition="expression=resource.name.startsWith(\"projects/$PROJECT/databases/mcp-auth\"),title=mcp-auth-only,description=Only the MCP sign-in database"
 
 openssl rand -base64 32 | tr -d '\n' | gcloud secrets create mcp-jwt-signing-key --data-file=-
-for s in mcp-jwt-signing-key portal-google-client-secret; do
+for s in mcp-jwt-signing-key portal-google-client-secret gemini-api-key; do
   gcloud secrets add-iam-policy-binding $s \
     --member=serviceAccount:$MCP_SA --role=roles/secretmanager.secretAccessor
 done
@@ -187,8 +187,12 @@ cd marketing-mcp
 gcloud run deploy hd-mcp --source . \
   --service-account=$MCP_SA --allow-unauthenticated --max-instances=3 \
   --set-env-vars="^;^GOOGLE_CLIENT_ID=$GOOGLE_CLIENT_ID;ALLOWED_USERS=$ALLOWED_USERS;MCP_BASE_URL=$MCP_URL;AUTH_FIRESTORE_DATABASE=mcp-auth;API_URL=$API_URL;API_AUDIENCE=$API_URL" \
-  --set-secrets=GOOGLE_CLIENT_SECRET=portal-google-client-secret:latest,MCP_JWT_SIGNING_KEY=mcp-jwt-signing-key:latest
+  --set-secrets=GOOGLE_CLIENT_SECRET=portal-google-client-secret:latest,MCP_JWT_SIGNING_KEY=mcp-jwt-signing-key:latest,GEMINI_API_KEY=gemini-api-key:latest
 ```
+
+`generate_image` needs `GEMINI_API_KEY`. On a service deployed before it,
+add the key once (the accessor grant above, then
+`gcloud run services update hd-mcp --region=$REGION --update-secrets=GEMINI_API_KEY=gemini-api-key:latest`).
 
 Claude Desktop adds it as a custom connector at `$MCP_URL/mcp`.
 

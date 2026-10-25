@@ -1,10 +1,11 @@
 # hd-marketing-mcp
 
 An MCP server for HealthyDoggo's SMM managers. Spec:
-`../specs/marketing-mcp.md`. So far it has two tools, both calling the search
+`../specs/marketing-mcp.md`. So far it has three tools. Two call the search
 API (`../search-api`): `search_knowledge_base` finds products, Instagram
 conversations and content items, and `search_content_insights` ranks the
 account's Instagram posts, reels and stories by their insights.
+`generate_image` draws a new image with Gemini.
 
 ```bash
 uv sync
@@ -42,6 +43,28 @@ how to turn a request like "top 5 posts from May by likes and saves" into them.
 It returns the API's `items`. An API error, or a BigQuery failure the API
 reports in `errorCode`, comes back as a tool error.
 
+## generate_image
+
+| Parameter | |
+|---|---|
+| `subject` | required; the scene, standalone |
+| `products` | optional; SKUs or product names that must appear |
+| `contentType` | optional; `Product photo`, `Lifestyle`, `Studio photoshoot` or `UGC` |
+| `composition` | optional; `Centered`, `Rule of Thirds`, `Flat Lay`, `Close-up` or `Wide` |
+| `cameraLevel` | optional; `Eye Level`, `High Angle`, `Top-Down`, `Low Angle` or `Ground Level` |
+| `aspectRatio` | `9:16`, `1:1` or `4:5` (default) |
+| `sampleUrls` | optional; https links to sample images (Drive links shared by link work) |
+
+Each product is looked up through `/searchcontent` among the `продуктове`
+content: a SKU is first resolved to the product's name, then up to two image
+files labelled with that name are taken. Their Drive links, and the samples,
+are downloaded without sign-in, so the files must be shared with anyone who
+has the link. References are shrunk to 1536 px JPEGs (at most 8) and sent to
+Gemini with a rule to keep the products, dogs and people as photographed
+(`src/tools/image_generation_service.py`). The tool returns the image as image
+content, plus a text note when a product had no photo or a photo was skipped.
+A sample that cannot be downloaded fails the call.
+
 ## Signing in
 
 Claude Desktop reaches the server as a remote connector, from Anthropic's
@@ -76,6 +99,8 @@ listed in the API's `SERVICE_CALLERS`.
 | `AUTH_FIRESTORE_DATABASE` | Firestore database for the proxy's state; `mcp-auth` by default |
 | `API_URL` | the search API's URL |
 | `API_AUDIENCE` | the API's URL again, the audience of the service token. Leave unset only for an API with no Cloud Run in front |
+| `GEMINI_API_KEY` | required by `generate_image`; from Secret Manager (`gemini-api-key`) |
+| `GEMINI_IMAGE_MODEL` | the image model; `gemini-3-pro-image` by default |
 | `MCP_TRANSPORT` | `http` (default) or `stdio` |
 | `PORT` | set by Cloud Run; 8080 otherwise |
 
