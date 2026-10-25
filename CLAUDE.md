@@ -12,7 +12,7 @@ Three live parts, each with its own toolchain, all serving HealthyDoggo's SMM ma
 | Marketing portal | `portal/` | npm (Next.js 16) | `specs/marketing-portal.md` |
 | Marketing MCP | `marketing-mcp/` | separate uv project | `specs/marketing-mcp.md` |
 
-The legacy `src/instagram_marketing_agent/` package has been removed. `routines/image_indexer/image_index.py` (the `image-index` script) still imports it and does not run; much of README.md still documents the old pipeline. Its self-contained pieces live on in `infrastructure/` and do import: `ffmpeg.py`, `deepseek.py`, `drive.py` (Drive download/upload over OAuth, `GOOGLE_OAUTH_*`), `anthropic.py` (Anthropic client, image preparation, cast rules) and `gemini.py` (Gemini client).
+The legacy `src/instagram_marketing_agent/` package and its `image-index` routine have been removed. Its self-contained pieces live on in `infrastructure/` and do import: `ffmpeg.py`, `deepseek.py`, `drive.py` (Drive download/upload over OAuth, `GOOGLE_OAUTH_*`), `anthropic.py` (Anthropic client, image preparation, cast rules) and `gemini.py` (Gemini client).
 
 ## Commands
 

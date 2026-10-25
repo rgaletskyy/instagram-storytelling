@@ -33,7 +33,6 @@ dev = [
 ]
 
 [project.scripts]
-image-index = "routines.image_indexer.image_index:main"
 rag-index = "routines.vector_indexer.indexer:main"
 insights-sync = "routines.insights_sync.sync:main"
 
