@@ -190,19 +190,16 @@ async def test_a_missing_api_key_is_an_error(monkeypatch):
 
 # --- the tool ---------------------------------------------------------------
 
-DRIVE = "https://drive.google.com/file/d/{}/view?usp=drivesdk"
-DOWNLOAD = "https://drive.usercontent.google.com/download?id={}&export=download"
-
 
 @pytest.fixture
 def world(monkeypatch):
-    """Fakes the search API (by query), the downloads and Gemini."""
+    """Fakes the search API (by query and productSku), the downloads and Gemini."""
     state = {"searches": [], "gemini": FakeGemini(), "files": {}, "results": {}}
 
     async def post(path, body):
         assert path == "/searchcontent"
         state["searches"].append(body)
-        return state["results"].get(body["query"], {})
+        return state["results"].get((body["query"], body.get("productSku")), {})
 
     monkeypatch.setattr(tool.search_api, "post", post)
     monkeypatch.setattr(
@@ -227,18 +224,12 @@ async def test_the_tool_is_listed_with_the_spec_parameters():
     assert tools["generate_image"].input_schema["required"] == ["subject"]
 
 
-async def test_a_sku_is_resolved_to_its_photos_and_the_image_returned(world):
-    world["results"] = {
-        "BTQ-1": {"products": [{"sku": "BTQ-1", "name": "Sensitive Skin Shampoo"}]},
-        "Sensitive Skin Shampoo": {
-            "content": [
-                {"fileName": "shampoo.jpg", "product": "Sensitive Skin Shampoo", "driveUrl": DRIVE.format("aaaaaaaaaaaa")},
-                {"fileName": "shampoo.mp4", "product": "Sensitive Skin Shampoo", "driveUrl": DRIVE.format("bbbbbbbbbbbb")},
-                {"fileName": "other.jpg", "product": "Avocado Spray", "driveUrl": DRIVE.format("cccccccccccc")},
-            ]
-        },
-    }  # fmt: skip
-    world["files"][DOWNLOAD.format("aaaaaaaaaaaa")] = _image()
+SHAMPOO = {"sku": "BTQ-1", "name": "Sensitive Skin Shampoo", "imageUrl": "https://shop.test/1.jpg"}
+
+
+async def test_a_sku_gives_its_image_url_and_the_image_returned(world):
+    world["results"] = {("BTQ-1", "BTQ-1"): {"products": [SHAMPOO]}}
+    world["files"]["https://shop.test/1.jpg"] = _image()
 
     result = await _call(
         {
@@ -249,22 +240,41 @@ async def test_a_sku_is_resolved_to_its_photos_and_the_image_returned(world):
         }
     )
 
-    assert world["searches"][0] == {"query": "BTQ-1", "productSku": "BTQ-1", "type": "продуктове"}
-    assert world["searches"][1] == {"query": "Sensitive Skin Shampoo", "type": "продуктове"}
+    assert world["searches"] == [{"query": "BTQ-1", "productSku": "BTQ-1"}]
     image = result.content[0]
     assert image.type == "image" and base64.b64decode(image.data) == GENERATED
     request = world["gemini"].requests[0]
-    assert len(request["input"]) == 2  # the prompt and the one matching photo
+    assert len(request["input"]) == 2  # the prompt and the product's photo
     assert "Sensitive Skin Shampoo" in request["input"][0]["text"]
     assert "lifestyle" in request["input"][0]["text"]
     assert "'BTQ-1' is Sensitive Skin Shampoo." in result.content[1].text
 
 
-async def test_a_product_without_photos_is_drawn_from_its_name(world):
-    result = await _call({"subject": "a dog", "products": ["Avocado Spray"]})
+async def test_a_name_takes_the_closest_product(world):
+    other = {"sku": "AV-1", "name": "Avocado Spray"}
+    world["results"] = {("shampoo", None): {"products": [SHAMPOO, other]}}
+    world["files"]["https://shop.test/1.jpg"] = _image()
+
+    result = await _call({"subject": "a dog", "products": ["shampoo"]})
+
     assert world["searches"] == [
-        {"query": "Avocado Spray", "productSku": "Avocado Spray", "type": "продуктове"}
+        {"query": "shampoo", "productSku": "shampoo"},
+        {"query": "shampoo"},
     ]
+    assert len(world["gemini"].requests[0]["input"]) == 2
+    assert "'shampoo' is Sensitive Skin Shampoo." in result.content[1].text
+
+
+async def test_a_product_without_an_image_url_is_drawn_from_its_name(world):
+    world["results"] = {("AV-1", "AV-1"): {"products": [{"sku": "AV-1", "name": "Avocado Spray"}]}}
+    result = await _call({"subject": "a dog", "products": ["AV-1"]})
+    assert world["gemini"].requests[0]["input"].startswith("a dog")
+    assert "No photo of 'AV-1'" in result.content[1].text
+
+
+async def test_an_unknown_product_is_drawn_from_its_name(world):
+    result = await _call({"subject": "a dog", "products": ["Avocado Spray"]})
+    assert len(world["searches"]) == 2
     assert world["gemini"].requests[0]["input"].startswith("a dog")
     assert "No photo of 'Avocado Spray'" in result.content[1].text
 

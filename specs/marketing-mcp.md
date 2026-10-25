@@ -92,7 +92,7 @@ description what should be present on content item. Extract most important descr
 
 #### behaviour
 
-- Each entry of `products` is looked up with `POST /searchcontent` (type `продуктове`, `productSku` = the entry); a SKU is resolved to the product's name, and up to two image files whose `product` matches that name are used as references.
+- Each entry of `products` is looked up with `POST /searchcontent`: as a SKU first (`productSku` = the entry, exact match), otherwise by name (the closest product). The product's `imageUrl`, its main catalogue photo, is used as the reference; a product without one is drawn from its name.
 - Product photos and `sampleUrls` are downloaded (Drive share links via their download link, shared by link), shrunk and attached to the Gemini request, at most 8 in all, with a rule to reproduce products, dogs and people as photographed.
 - Returns the image as image content in the chat, plus a text note when a product had no photo or a photo was skipped. A sample that cannot be downloaded, or no image from Gemini, is a tool error.
 

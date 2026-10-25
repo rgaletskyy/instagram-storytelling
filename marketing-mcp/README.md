@@ -55,9 +55,9 @@ reports in `errorCode`, comes back as a tool error.
 | `aspectRatio` | `9:16`, `1:1` or `4:5` (default) |
 | `sampleUrls` | optional; https links to sample images (Drive links shared by link work) |
 
-Each product is looked up through `/searchcontent` among the `продуктове`
-content: a SKU is first resolved to the product's name, then up to two image
-files labelled with that name are taken. Their Drive links, and the samples,
+Each product is looked up through `/searchcontent` among the products: a SKU
+exactly (`productSku`), otherwise the closest product to the name, and its
+`imageUrl` (the catalogue's main photo) is taken. That photo, and the samples,
 are downloaded without sign-in, so the files must be shared with anyone who
 has the link. JPEG, PNG, WebP and HEIC/HEIF (iPhone photos) are accepted;
 Drive serves HEIC as `application/octet-stream`, so a generic binary download

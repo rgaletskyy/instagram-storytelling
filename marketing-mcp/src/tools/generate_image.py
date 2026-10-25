@@ -23,8 +23,8 @@ DESCRIPTION = (
     "Invoke this tool when the user asks to generate an image from a description of the "
     "scene and the elements that should be in it. For example: 'собака сидить біля баночки "
     "з вітамінами', 'собака сидить у ванні, рука тримає шампунь Sensitive Skin біля "
-    "мордочки собаки'. Products named in `products` are drawn from their real photographs "
-    "in the content library; photos at `sampleUrls` are attached as references too. "
+    "мордочки собаки'. Products named in `products` are drawn from their real product "
+    "photos from the catalogue; photos at `sampleUrls` are attached as references too. "
     "The image comes back in the chat."
 )
 
@@ -54,48 +54,30 @@ CAMERA_PROMPTS = {
     "Ground Level": "Camera on the ground, at the dog's level.",
 }
 
-# Product photos in the content library: indexed with this type, linked to a
-# product by its name in `product`.
-PRODUCT_CONTENT_TYPE = "продуктове"
-PHOTOS_PER_PRODUCT = 2
-IMAGE_EXTENSIONS = (".jpg", ".jpeg", ".png", ".webp", ".heic")
-
 _generator = ImageGenerator()
 
 
-def _matches(product_name: str, labelled: str) -> bool:
-    a, b = product_name.casefold().strip(), labelled.casefold().strip()
-    return bool(a and b) and (a in b or b in a)
-
-
-async def _search(body: dict[str, Any]) -> dict[str, Any]:
+async def _products(body: dict[str, Any]) -> list[dict[str, Any]]:
     result = await search_api.post("/searchcontent", body)
-    return result if isinstance(result, dict) else {}
+    return (result.get("products") if isinstance(result, dict) else None) or []
 
 
 async def product_photo_urls(product: str) -> tuple[str, list[str]]:
-    """The product's name and the links of up to PHOTOS_PER_PRODUCT of its photos.
+    """The product's name and the link of its main photo (`imageUrl`), if it has one.
 
-    `product` is a SKU or a name. A SKU is resolved to the product's name
-    first, since photos are labelled by name; a name passes through.
+    `product` is a SKU or a name. A SKU is matched exactly; otherwise the
+    closest product to the words is taken, and the caller reports which one.
     """
-    found = await _search({"query": product, "productSku": product, "type": PRODUCT_CONTENT_TYPE})
-    name = product
-    for item in found.get("products") or []:
-        if str(item.get("sku", "")).casefold() == product.casefold() and item.get("name"):
-            name = item["name"]
-            # The first search ranked content by the SKU's wording; rank by the name.
-            found = await _search({"query": name, "type": PRODUCT_CONTENT_TYPE})
-            break
-
-    urls = [
-        item["driveUrl"]
-        for item in found.get("content") or []
-        if item.get("driveUrl")
-        and _matches(name, item.get("product", ""))
-        and item.get("fileName", "").casefold().endswith(IMAGE_EXTENSIONS)
-    ]
-    return name, urls[:PHOTOS_PER_PRODUCT]
+    found = await _products({"query": product, "productSku": product})
+    match = next((p for p in found if str(p.get("sku", "")).casefold() == product.casefold()), None)
+    if match is None:
+        # Not a SKU: rank the products by the name instead.
+        found = await _products({"query": product})
+        match = found[0] if found else None
+    if match is None:
+        return product, []
+    url = match.get("imageUrl")
+    return match.get("name") or product, [url] if url else []
 
 
 def build_prompt(
