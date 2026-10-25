@@ -43,6 +43,8 @@ class Product(_Document):
     volume: str = ""
     weight: str = ""
     size: str = ""
+    # The product's main photo on the site: the first of the export's images.
+    image_url: str = ""
 
 
 class InstagramMessage(_Document):

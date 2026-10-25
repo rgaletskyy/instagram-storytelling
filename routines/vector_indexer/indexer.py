@@ -157,6 +157,11 @@ def _document(doc_id: str, model, embedding_text: str) -> IndexDocument:
     return IndexDocument(doc_id, data)
 
 
+def _first_url(value: str) -> str:
+    """The first of a comma-separated list of image links: the main photo."""
+    return value.split(",")[0].strip()
+
+
 # The SKU column under each catalogue export's own name: the old site export
 # (Russian headers) and the current B2B export (Ukrainian headers). Every other
 # field below likewise names the old column first and the new one after it.
@@ -189,6 +194,7 @@ def read_products(path: Path) -> list[IndexDocument]:
             # `Вес` is 0 on every row; the real weight is in `Вага`.
             weight=_first(row, columns, "Вага", "Вес"),
             size=_first(row, columns, "Розмір"),
+            image_url=_first_url(_first(row, columns, "Зображення")),
         )
         text = _embedding_text(
             product.sku,

@@ -46,9 +46,10 @@ def test_products_take_the_first_filled_of_repeated_columns(tmp_path):
 def test_products_read_the_ukrainian_b2b_export(tmp_path):
     path = tmp_path / "products.xlsx"
     header = ["ID товару/послуги", "Товар/Послуга", "Виробник", "SKU", "Ціна", "Вага", "Опис",
-              "Категорія"]  # fmt: skip
+              "Категорія", "Зображення"]  # fmt: skip
     row = ["ND-HS", "Холдер для стіків", "Natural Dog Company", "ND-HS", 120.5, 0.05,
-           "<p>Холдер</p>", "Лапи і кігті"]  # fmt: skip
+           "<p>Холдер</p>", "Лапи і кігті",
+           "https://x.ua/images/1.jpg, https://x.ua/images/2.jpg"]  # fmt: skip
     _sheet(path, [header, row])
 
     (doc,) = read_products(path)
@@ -57,6 +58,9 @@ def test_products_read_the_ukrainian_b2b_export(tmp_path):
     assert (doc.data["name"], doc.data["brand"]) == ("Холдер для стіків", "Natural Dog Company")
     assert (doc.data["price"], doc.data["weight"]) == (120.5, "0.05")
     assert (doc.data["description"], doc.data["category"]) == ("Холдер", "Лапи і кігті")
+    # The first of the listed images, and not part of what is embedded.
+    assert doc.data["imageUrl"] == "https://x.ua/images/1.jpg"
+    assert "x.ua" not in doc.data["embeddingText"]
 
 
 def test_products_without_a_sku_column_fail_rather_than_index_nothing(tmp_path):

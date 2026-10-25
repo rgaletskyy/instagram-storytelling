@@ -26,6 +26,7 @@ Database `healthydoggo` contains three collections - `products`, `instagram_mess
 - volume: string, volume of products(makes sense for cosmetics),
 - weight: string,
 - size: string,
+- imageUrl: string, link to the product's main photo on the site (the first link of the export's `Зображення` column); not embedded
 - embeddingText: concatenation of sku, name, brand, category, decription, volume, size, weight
 - embeddingVector: calcualted by embedding model
 
