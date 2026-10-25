@@ -7,8 +7,8 @@ Over HTTP every request needs a Google sign-in from an allowlisted account
 (see auth.py), and the server will not start without it configured. Over
 stdio there is no network to guard: whoever starts the process is the user.
 
-Only search_knowledge_base, search_content_insights and generate_image exist so
-far; the spec's other tools come later.
+Only search_knowledge_base, search_content_insights, generate_image and
+generate_slide exist so far; the spec's other tools come later.
 """
 
 from __future__ import annotations
@@ -19,6 +19,7 @@ from fastmcp import FastMCP
 
 import auth
 from tools import generate_image as image_tool
+from tools import generate_slide as slide_tool
 from tools import search_content_insights as insights_tool
 from tools import search_knowledge_base as search_tool
 
@@ -39,6 +40,7 @@ mcp.tool(
     description=insights_tool.DESCRIPTION,
 )
 mcp.tool(image_tool.generate_image, name=image_tool.NAME, description=image_tool.DESCRIPTION)
+mcp.tool(slide_tool.generate_slide, name=slide_tool.NAME, description=slide_tool.DESCRIPTION)
 
 
 def main() -> None:

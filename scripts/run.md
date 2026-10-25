@@ -63,10 +63,13 @@ cd marketing-mcp
 API_URL=https://hd-api-801813292191.europe-central2.run.app \
 API_AUDIENCE=https://hd-api-801813292191.europe-central2.run.app \
 GEMINI_API_KEY=$(grep '^GEMINI_API_KEY=' ../.env | cut -d= -f2-) \
+ANTHROPIC_API_KEY=$(grep '^ANTHROPIC_API_KEY=' ../.env | cut -d= -f2-) \
 MCP_TRANSPORT=stdio uv run python src/mcp-server.py
 ```
 
-`GEMINI_API_KEY` is for `generate_image` only; the other tools run without it.
+`GEMINI_API_KEY` is for `generate_image` only and `ANTHROPIC_API_KEY` for
+`generate_slide` only; the other tools run without them. `generate_slide` also
+needs Playwright's Chromium once: `uv run playwright install chromium`.
 
 Over HTTP, as on Cloud Run (sign-in required; add
 `http://localhost:8090/auth/callback` to the OAuth client's redirect URIs):

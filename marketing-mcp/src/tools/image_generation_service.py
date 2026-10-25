@@ -93,8 +93,8 @@ def _may_be_image(content_type: str) -> bool:
     return media_type.startswith("image/") or media_type in BINARY_TYPES
 
 
-def _shrink(data: bytes) -> bytes:
-    """The picture as an RGB JPEG no larger than REFERENCE_MAX_SIDE on its longest side."""
+def _shrink(data: bytes, max_side: int = REFERENCE_MAX_SIDE) -> bytes:
+    """The picture as an RGB JPEG no larger than `max_side` on its longest side."""
     from PIL import Image, ImageOps, UnidentifiedImageError
     from pillow_heif import register_heif_opener
 
@@ -108,7 +108,7 @@ def _shrink(data: bytes) -> bytes:
     # Phone photos are stored sideways with an EXIF rotation; apply it, since
     # the JPEG written below carries no EXIF.
     image = ImageOps.exif_transpose(image)
-    image.thumbnail((REFERENCE_MAX_SIDE, REFERENCE_MAX_SIDE))
+    image.thumbnail((max_side, max_side))
     if image.mode != "RGB":
         # Transparent cut-outs go on white, not black.
         rgba = image.convert("RGBA")
@@ -137,8 +137,8 @@ class ImageGenerator:
             self._client = genai.Client()
         return self._client
 
-    async def download(self, url: str) -> Reference:
-        """The image at `url`, shrunk for the request."""
+    async def download(self, url: str, max_side: int = REFERENCE_MAX_SIDE) -> Reference:
+        """The image at `url`, as a JPEG shrunk to `max_side`."""
         if urlparse(url).scheme != "https":
             raise ImageGenerationError(f"{url}: only https links can be used")
         try:
@@ -164,7 +164,7 @@ class ImageGenerator:
         except httpx.HTTPError as exc:
             raise ImageGenerationError(f"{url}: could not be downloaded: {exc}") from exc
         try:
-            return Reference(url=url, data=await asyncio.to_thread(_shrink, bytes(data)))
+            return Reference(url=url, data=await asyncio.to_thread(_shrink, bytes(data), max_side))
         except ImageGenerationError as exc:
             raise ImageGenerationError(f"{url}: {exc}") from exc
 

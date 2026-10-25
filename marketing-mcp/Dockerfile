@@ -10,6 +10,9 @@ ENV UV_COMPILE_BYTECODE=1 \
 
 COPY pyproject.toml uv.lock ./
 RUN uv sync --frozen --no-dev --no-install-project
+# generate_slide screenshots its HTML in headless Chromium.
+ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
+RUN playwright install --with-deps --only-shell chromium
 COPY src ./src
 
 # Cloud Run sets PORT; the server listens on it at /mcp.

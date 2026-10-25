@@ -174,7 +174,7 @@ on every bottle.
 
 ## Decorative element library
 
-`src/resources/png/` holds the 194 outline PNGs catalogued in section 9 of the design
+`marketing-mcp/src/resources/png/` holds the 194 outline PNGs catalogued in section 9 of the design
 guidelines. They ship as dark outline art and the guidelines require recolouring before
 use, so on first run they are tinted into the brand palette under `.decor-cache/`
 (gitignored) and the layout step references them as `decor/<colour>/<file>.png`.

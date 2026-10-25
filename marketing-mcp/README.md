@@ -5,7 +5,8 @@ An MCP server for HealthyDoggo's SMM managers. Spec:
 API (`../search-api`): `search_knowledge_base` finds products, Instagram
 conversations and content items, and `search_content_insights` ranks the
 account's Instagram posts, reels and stories by their insights.
-`generate_image` draws a new image with Gemini.
+`generate_image` draws a new image with Gemini, and `generate_slide` lays
+text out in the brand style over a photo.
 
 ```bash
 uv sync
@@ -67,6 +68,28 @@ Gemini with a rule to keep the products, dogs and people as photographed
 content, plus a text note when a product had no photo or a photo was skipped.
 A sample that cannot be downloaded fails the call.
 
+## generate_slide
+
+| Parameter | |
+|---|---|
+| `subject` | required; what the slide is for and what should be on it, standalone |
+| `backgroundImage` | required; https link to the photo (Drive links shared by link work) |
+| `overlayText` | required; the copy, shown verbatim |
+| `aspectRatio` | `9:16` (default, 1080x1920), `4:5` (1080x1350) or `1:1` (1080x1080) |
+
+The background is downloaded like a `generate_image` sample (HEIC included,
+shrunk to 2048 px). Claude (`SLIDE_LAYOUT_MODEL`) sees it and writes the slide
+as one HTML document, following `src/resources/slide-design-guidelines.md`:
+brand fonts, the safe area, a small text block kept off the dog and the
+product, and optionally elements of the decorative library
+(`src/resources/png/`, tinted to the brand colours on the fly). Headless
+Chromium (Playwright) then screenshots it at the artboard's size
+(`src/tools/slide_html_service.py`). The page is served from memory: it can
+load only its background, the decorative elements and Google Fonts, and runs
+no JavaScript. A page with an image that did not load is laid out once more;
+a second failure, or a background that cannot be downloaded, is a tool error.
+It returns the slide as a JPEG image. A call takes about a minute.
+
 ## Signing in
 
 Claude Desktop reaches the server as a remote connector, from Anthropic's
@@ -103,6 +126,8 @@ listed in the API's `SERVICE_CALLERS`.
 | `API_AUDIENCE` | the API's URL again, the audience of the service token. Leave unset only for an API with no Cloud Run in front |
 | `GEMINI_API_KEY` | required by `generate_image`; from Secret Manager (`gemini-api-key`) |
 | `GEMINI_IMAGE_MODEL` | the image model; `gemini-3-pro-image` by default |
+| `ANTHROPIC_API_KEY` | required by `generate_slide`; from Secret Manager (`ANTHROPIC_API_KEY`) |
+| `SLIDE_LAYOUT_MODEL` | the model that lays slides out; `claude-opus-5-5` by default |
 | `MCP_TRANSPORT` | `http` (default) or `stdio` |
 | `PORT` | set by Cloud Run; 8080 otherwise |
 

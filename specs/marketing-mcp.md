@@ -6,7 +6,6 @@ MCP will have next functionality:
 - search content insights via customers query. E.g - top 5 posts from May based on customers interaction.
 - generate copy/caption for post according to brand rules.
 - validate captions and return comments, improvements.
-
 - generate image(s) from scratch using user input and/or samples
 
 - generate slide for story telling containing text, image and brand elements
@@ -76,18 +75,18 @@ Passed to the search API's `POST /searchContentInsights` as is (see [search-api.
 
 ### generate_image
 
-Invoke this tool when user asks to generate image based on his description of the scene and elements that should be present on it. For example `собака сидить біля баночик з вітамінами`, `собака сидить у ванні, рука тримає шампунь Sebsitive Skin біля мордочки собаки`
+Invoke this tool when user asks to generate image based on his description of the scene and elements that should be present on it. For example `собака сидить біля баночки з вітамінами`, `собака сидить у ванні, рука тримає шампунь Seтsitive Skin біля мордочки собаки`
 
 
 #### parameters
 
-- subject: string, A standalone subject that describes what should be on imange. Rewrite the customer's message so it makes sense without the conversation: replace pronouns with the product or topic they refer to, include relevant details mentioned earlier (dog age, breed, problem, lifestyle or promo photos), and drop greetings and filler. Pay attention on 
+- subject: string, A standalone subject that describes what should be on image. Rewrite the customer's message so it makes sense without the conversation: replace pronouns with the product or topic they refer to, include relevant details mentioned earlier (dog age, breed, problem, lifestyle or promo photos), and drop greetings and filler. Pay attention on 
 description what should be present on content item. Extract most important descriptions customer provides for desired image.
 - products: array of products that has to be present on image. Extract exact SKU if possible from conversation. If sku not presented, include product name or names mentioned in conversation.
 - contentType: string, defines type of content. One of `Product photo`, `Lifestyle`, `Studio photoshoot`, `UGC`
 - composition: string, describes how elements are positioned and framed. One of `Centered`, `Rule of Thirds`, `Flat Lay`, `Close-up`, `Wide`
 - cameraLevel: string, defines the position of the camera relative to the subject. It determines whether the viewer sees the product from above, below, directly in front, or from the side. One of `Eye Level`, `High Angle`, `Top-Down`, `Low Angle`, `Ground Level`
-- aspectRatio, string, Describes aspect ration for content - portrait (posts), square (posts), full screen(story, reels) One of `9:16`, `1:1`, `4:5`; `4:5` when not given
+- aspectRatio, string, Describes aspect ratio for content - portrait (posts), square (posts), full screen(story, reels) One of `9:16`, `1:1`, `4:5`; `4:5` when not given
 - sampleUrls, string[], array if urls popinting to sample images, that have to be considered when generating new image
 
 #### behaviour
@@ -95,6 +94,28 @@ description what should be present on content item. Extract most important descr
 - Each entry of `products` is looked up with `POST /searchcontent`: as a SKU first (`productSku` = the entry, exact match), otherwise by name (the closest product). The product's `imageUrl`, its main catalogue photo, is used as the reference; a product without one is drawn from its name.
 - Product photos and `sampleUrls` are downloaded (Drive share links via their download link, shared by link), shrunk and attached to the Gemini request, at most 8 in all, with a rule to reproduce products, dogs and people as photographed.
 - Returns the image as image content in the chat, plus a text note when a product had no photo or a photo was skipped. A sample that cannot be downloaded, or no image from Gemini, is a tool error.
+
+
+### generate_slide
+
+Invoke this tool when users asks to generate slide for story or post carousel based on input. For example `згенеруй слайд для сторіз використовуючи фотою На фото має буде текст в брендовому стилі із заклитком перейти за посиланням, під ним тест який вказує ціну продукту`
+
+
+#### parameters
+
+- subject: string, A standalone subject that describes what should be on slide. Rewrite the customer's message so it makes sense without the conversation: replace pronouns with the product or topic they refer to, include relevant details mentioned earlier (dog age, breed, problem, lifestyle or promo photos), and drop greetings and filler. Pay attention on 
+description what should be present on slide, objects, text.
+- backgroundImage: string, url to background image that should be used on this slide
+- overlayText: string, text that should be present on slide
+- aspectRatio: string, Describes aspect ratio for slide - portrait (posts), square (posts), full screen(story, reels) One of `9:16`, `1:1`, `4:5`; `9:16` when not given
+
+#### behaviour
+
+- `backgroundImage` is downloaded like a `generate_image` sample (Drive share links, HEIC) and shrunk to at most 2048 px.
+- Claude, shown the background, writes the slide as one HTML document following `slide-design-guidelines.md`: 1080x1920 (`9:16`), 1080x1350 (`4:5`) or 1080x1080 (`1:1`), brand fonts, text inside the safe area, the text block at most 27% of the height and off the dog's face and the product, optional tinted decorative elements.
+- Headless Chromium screenshots the page at that size. The page may load only its background, the decorative elements and Google Fonts, and runs no JavaScript.
+- An image that does not load gets one new layout; a second failure, or a background that cannot be downloaded, is a tool error.
+- Returns the slide as a JPEG image in the chat.
 
 
 ### create_storytelling_script
