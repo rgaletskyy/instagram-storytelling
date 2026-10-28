@@ -35,7 +35,8 @@ for c in products instagram_messages content; do
 done
 ```
 
-Then index the spreadsheets in `src/resources/indices/`:
+Then index the products and content spreadsheets in `src/resources/indices/`
+(`instagram_messages` is written by the messaging sync, see `scripts/deploy.md`):
 
 ```bash
 uv run rag-index --collection products --limit 20   # try it on a few rows
@@ -45,7 +46,7 @@ uv run rag-index --force                            # re-embed what is stored
 
 Rows are embedded and written 200 at a time, with a 10-second pause between
 chunks. Runs are resumable -- a row whose id is already stored is skipped -- and ids
-are stable (SKU, Drive file id, a hash of conversation, sender and day).
+are stable (SKU, Drive file id).
 
 **Messages are stored a day at a time.** One sender's messages in one
 conversation on one day (Kyiv time) are joined, in the order sent, into a

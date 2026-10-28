@@ -123,9 +123,22 @@ uv run insights-sync --days 90
 uv run insights-sync --csv specs/meta/posts/*.csv --types FEED,REELS   # load Business Suite exports
 ```
 
+## Messaging sync
+
+Needs `META_ACCESS_TOKEN`, `FACEBOOK_PAGE_ID`, `GEMINI_API_KEY` and
+`GOOGLE_CLOUD_PROJECT` in `.env`. It writes to the real Firestore collections
+`instagram_messages` and `instagram_comments`.
+
+```bash
+uv run messaging-sync                 # DMs and comments of the last 21 days
+uv run messaging-sync --days 7 --media-days 30
+uv run messaging-sync --days 1100 --media-days 1100   # initial load: the whole history
+```
+
 ## Knowledge base indexing
 
-Needs `GEMINI_API_KEY` and `GOOGLE_CLOUD_PROJECT` in `.env`.
+Needs `GEMINI_API_KEY` and `GOOGLE_CLOUD_PROJECT` in `.env`. Products and content
+only; `instagram_messages` comes from the messaging sync.
 
 ```bash
 uv run rag-index --collection products --limit 20   # try on a few rows

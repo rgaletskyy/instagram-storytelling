@@ -32,11 +32,21 @@ Database `healthydoggo` contains three collections - `products`, `instagram_mess
 
 ### Instagram_messages schema
 
+- sender: string, the customer's username (the conversation)
+- text: string, one Kyiv day of the conversation: a message a line as `sender: text`, both the customer's and HealthyDoggo's, sorted by time
+- timestamp: timestamp when the day's first message was sent
+- embeddingText: text
+- embeddingVector: calculated by embedding model
+
+### Instagram_comments schema
+
 - sender: string, id of message sender
 - text: string, message text
-- timestamp: timestamp whne mesdsage being sent
-- embeddingText: text
-- embeddingVector: calcualted by embedding model
+- timestamp: timestamp when message being sent
+- embedingText: text
+- embeddingVector: calculated by embedding model
+- parentId: string, id of post or reel, comment was added to.
+
 
 ### Content schema
 

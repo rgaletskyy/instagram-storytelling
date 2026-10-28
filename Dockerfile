@@ -1,4 +1,5 @@
-# The search API (search-api/src/api), for Cloud Run. See "Search API" in README.md.
+# The search API (search-api/src/api), for Cloud Run, and the jobs under
+# routines/ (insights-sync, messaging-sync), which run it with --command.
 FROM python:3.12-slim
 
 COPY --from=ghcr.io/astral-sh/uv:0.12.1 /uv /bin/uv
@@ -9,7 +10,6 @@ ENV UV_COMPILE_BYTECODE=1 \
     PATH="/app/.venv/bin:$PATH"
 
 COPY pyproject.toml uv.lock README.md ./
-COPY src ./src
 COPY infrastructure ./infrastructure
 COPY routines ./routines
 COPY search-api/src ./search-api/src

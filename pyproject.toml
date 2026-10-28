@@ -35,6 +35,7 @@ dev = [
 [project.scripts]
 rag-index = "routines.vector_indexer.indexer:main"
 insights-sync = "routines.insights_sync.sync:main"
+messaging-sync = "routines.messaging_sync.sync:main"
 
 [tool.hatch.build.targets.wheel]
 packages = [

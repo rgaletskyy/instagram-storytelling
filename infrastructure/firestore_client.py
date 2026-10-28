@@ -17,6 +17,8 @@ PRODUCTS = "products"
 INSTAGRAM_MESSAGES = "instagram_messages"
 CONTENT = "content"
 COLLECTIONS = (PRODUCTS, INSTAGRAM_MESSAGES, CONTENT)
+# Written by routines/messaging_sync; not searched by SearchService yet.
+INSTAGRAM_COMMENTS = "instagram_comments"
 
 EMBEDDING_TEXT_FIELD = "embeddingText"
 VECTOR_FIELD = "embeddingVector"
@@ -24,6 +26,8 @@ DISTANCE_FIELD = "distance"
 # Firestore commits at most 500 writes at once; a document carries a 1536-float
 # vector, so a smaller batch also keeps each request well under its size limit.
 WRITE_BATCH = 100
+# Documents fetched per get_all.
+READ_BATCH = 300
 
 
 class FirestoreClient:
@@ -85,6 +89,24 @@ class FirestoreClient:
             }
         except Exception as exc:  # noqa: BLE001
             raise DataSourceError(f"Firestore could not list {collection}: {exc}") from exc
+
+    async def stored_texts(self, collection: str, ids: Iterable[str]) -> dict[str, str]:
+        """The `embeddingText` of each of `ids` already stored; ids not stored are left out."""
+        col = self._client.collection(collection)
+        refs = [col.document(doc_id) for doc_id in dict.fromkeys(ids)]
+        texts = {}
+        try:
+            for start in range(0, len(refs), READ_BATCH):
+                async for snapshot in self._client.get_all(
+                    refs[start : start + READ_BATCH], field_paths=[EMBEDDING_TEXT_FIELD]
+                ):
+                    if snapshot.exists:
+                        texts[snapshot.id] = (snapshot.to_dict() or {}).get(
+                            EMBEDDING_TEXT_FIELD, ""
+                        )
+        except Exception as exc:  # noqa: BLE001
+            raise DataSourceError(f"Firestore could not read {collection}: {exc}") from exc
+        return texts
 
     async def upsert(self, collection: str, documents: Iterable[tuple[str, dict]]) -> None:
         """Write documents by id. A `embeddingVector` list is stored as a Firestore vector."""

@@ -17,6 +17,7 @@ paste the value, press Enter.
 | `hd-mcp` | service | public, Google sign-in | `hd-mcp` | `marketing-mcp/` |
 | `hd-webhook` | service | public, Meta signature | `hd-webhook` | repo root |
 | `insights-sync` | job, weekly | scheduler only | `hd-insights-sync` | repo root |
+| `messaging-sync` | job, weekly | scheduler only | `hd-messaging-sync` | repo root |
 
 ## 0. Variables
 
@@ -45,6 +46,7 @@ PORTAL_SA=hd-portal@$PROJECT.iam.gserviceaccount.com
 MCP_SA=hd-mcp@$PROJECT.iam.gserviceaccount.com
 WEBHOOK_SA=hd-webhook@$PROJECT.iam.gserviceaccount.com
 SYNC_SA=hd-insights-sync@$PROJECT.iam.gserviceaccount.com
+MESSAGING_SA=hd-messaging-sync@$PROJECT.iam.gserviceaccount.com
 ```
 
 A service's URL is known only after its first deploy. On a fresh project,
@@ -57,7 +59,7 @@ gcloud services enable run.googleapis.com cloudbuild.googleapis.com \
   artifactregistry.googleapis.com secretmanager.googleapis.com \
   firestore.googleapis.com bigquery.googleapis.com cloudscheduler.googleapis.com
 
-for sa in hd-api hd-portal hd-mcp hd-webhook hd-insights-sync; do
+for sa in hd-api hd-portal hd-mcp hd-webhook hd-insights-sync hd-messaging-sync; do
   gcloud iam service-accounts create $sa
 done
 ```
@@ -82,13 +84,14 @@ read -rs S && printf %s "$S" | gcloud secrets create portal-google-client-secret
 gcloud firestore databases create --database=healthydoggo --location=$REGION
 
 # One vector index per collection; vectors are 1536-d.
-for c in products instagram_messages content; do
+for c in products instagram_messages content instagram_comments; do
   gcloud firestore indexes composite create --database=healthydoggo \
     --collection-group=$c --query-scope=COLLECTION \
     --field-config field-path=embeddingVector,vector-config='{"dimension":"1536","flat":"{}"}'
 done
 
-# Embed the spreadsheets in src/resources/indices/ (needs .env, see run.md).
+# Embed products and content from src/resources/indices/ (needs .env, see run.md);
+# instagram_messages comes from the messaging sync (section 9).
 uv run rag-index
 ```
 
@@ -327,11 +330,65 @@ the app is published (Live).
 
 Redeploy: `gcloud run deploy hd-webhook --source .`
 
+## 9. Weekly sync: job `messaging-sync`
+
+Reads the last three weeks of Instagram direct messages and comments from the
+Graph API, embeds them and stores what is new in `instagram_messages` (the
+RAG collection, one document per conversation and day) and
+`instagram_comments` (one per comment). Messages need a Meta token with
+`instagram_manage_messages`, from a Facebook account with the Messages task on
+the Page (`ANALYZE` alone gets `(#10) The viewer doesn't have permissions to
+view messages`), and "Allow access to messages" on in the Instagram app's
+Connected tools; generate the token after the role is given. A part the token
+cannot read fails on its own and fails the execution, the other part is still
+stored.
+
+First time: its Firestore access (the knowledge base only) and secrets.
+
+```bash
+gcloud projects add-iam-policy-binding $PROJECT \
+  --member=serviceAccount:$MESSAGING_SA --role=roles/datastore.user \
+  --condition="expression=resource.name.startsWith(\"projects/$PROJECT/databases/healthydoggo\"),title=healthydoggo-only,description=Only the knowledge-base database"
+for s in meta-access-token gemini-api-key; do
+  gcloud secrets add-iam-policy-binding $s \
+    --member=serviceAccount:$MESSAGING_SA --role=roles/secretmanager.secretAccessor
+done
+```
+
+Deploy, from the repo root; it uses the API's image.
+
+```bash
+gcloud run jobs deploy messaging-sync --source . \
+  --service-account=$MESSAGING_SA --command=messaging-sync --max-retries=1 --task-timeout=30m \
+  --set-env-vars=FACEBOOK_PAGE_ID=$FACEBOOK_PAGE_ID \
+  --set-secrets=META_ACCESS_TOKEN=meta-access-token:latest,GEMINI_API_KEY=gemini-api-key:latest
+```
+
+First time: the schedule, every Sunday at 03:00 Kyiv time.
+
+```bash
+gcloud run jobs add-iam-policy-binding messaging-sync \
+  --member=serviceAccount:$MESSAGING_SA --role=roles/run.invoker
+
+gcloud scheduler jobs create http messaging-sync-weekly --location=$REGION \
+  --schedule="0 3 * * 0" --time-zone=Europe/Kyiv --http-method=POST \
+  --uri="https://run.googleapis.com/v2/projects/$PROJECT/locations/$REGION/jobs/messaging-sync:run" \
+  --oauth-service-account-email=$MESSAGING_SA \
+  --oauth-token-scope=https://www.googleapis.com/auth/cloud-platform
+```
+
+Run it now: `gcloud run jobs execute messaging-sync`.
+Redeploy: `gcloud run jobs deploy messaging-sync --source .`
+
+The Graph API returns each conversation's whole history, so the initial load
+is the same sync over a longer window, run once from a machine (an execution
+times out after 30 minutes): `uv run messaging-sync --days 1100 --media-days 1100`.
+
 ## Checks after a deploy
 
 ```bash
 gcloud run services logs read hd-api --limit=20      # or hd-portal, hd-mcp, hd-webhook
-gcloud run jobs executions list --job=insights-sync
+gcloud run jobs executions list --job=insights-sync   # or messaging-sync
 
 curl -s -o /dev/null -w '%{http_code}\n' -X POST $API_URL/searchcontent       # 403: IAM refuses anonymous calls
 curl -s -o /dev/null -w '%{http_code}\n' $MCP_URL/.well-known/oauth-authorization-server  # 200

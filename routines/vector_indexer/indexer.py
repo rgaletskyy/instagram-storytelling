@@ -1,14 +1,17 @@
 """Reads the spreadsheets in src/resources/indices, embeds each row, stores it in Firestore.
 
-    uv run rag-index                              # all three collections
+Products and content only: `instagram_messages` is written by
+routines/messaging_sync from the Graph API, in the shape `message_documents`
+builds here.
+
+    uv run rag-index                              # both collections
     uv run rag-index --collection products --limit 20
     uv run rag-index --force                      # re-embed rows already stored
 
 Runs are resumable: a document whose id is already in its collection is
-skipped, and rows are written a chunk at a time, so an interrupted run over the
-messages keeps what it finished. Ids are stable across runs -- the SKU, the
-Drive file id, a hash of conversation, sender and day -- so a rerun never
-duplicates a row.
+skipped, and rows are written a chunk at a time, so an interrupted run keeps
+what it finished. Ids are stable across runs -- the SKU, the Drive file id --
+so a rerun never duplicates a row.
 """
 
 from __future__ import annotations
@@ -34,7 +37,6 @@ from infrastructure.embedding_client import EmbeddingClient
 from infrastructure.firestore_client import (
     CONTENT,
     EMBEDDING_TEXT_FIELD,
-    INSTAGRAM_MESSAGES,
     PRODUCTS,
     VECTOR_FIELD,
     FirestoreClient,
@@ -61,7 +63,7 @@ _DM_NOTICES = {
 _DM_PLACEHOLDER = re.compile(r"^\[[^\]]+\]$")
 # Messages are grouped by the day they were sent here, not in UTC: 23:00 UTC is
 # already the next morning in Kyiv, and would split one evening's chat in two.
-_DM_TIMEZONE = ZoneInfo("Europe/Kyiv")
+DM_TIMEZONE = ZoneInfo("Europe/Kyiv")
 
 # A file shows a dog when a breed was recognised, or failing that when one of
 # its tags is exactly "собака". Exactly: "собака" is also inside "догляд за
@@ -211,38 +213,37 @@ def read_products(path: Path) -> list[IndexDocument]:
     return docs
 
 
-def read_instagram_messages(path: Path) -> list[IndexDocument]:
-    """One document per conversation, sender and day, its messages in the order sent.
+def message_documents(
+    messages: Iterable[tuple[str, str, datetime | None, str]],
+) -> list[IndexDocument]:
+    """`(thread, sender, sent, text)` messages grouped into `instagram_messages` documents.
 
-    A single message says little -- "так", "а на велику породу?" -- and a day of
-    them from one person is what a search can actually match. Grouping by
-    conversation as well as sender keeps the shop's own replies, which it sends
-    to everyone, from merging across customers. The document's timestamp is its
-    first message's.
+    One document per conversation and Kyiv day: both sides of the day's chat,
+    one message a line as `sender: text`, in the order sent, so a search finds
+    a question together with its answer. A single message says little --
+    "так", "а на велику породу?" -- and a day of the conversation is what a
+    search can actually match. `thread` names the conversation (the customer's
+    username) and becomes the document's `sender`; its timestamp is the first
+    message's, and its id a hash of conversation and day, so reading the same
+    day again gives the same document.
     """
-    rows = load_workbook(path, read_only=True).active.iter_rows(values_only=True)
-    columns = _columns(next(rows))
-    groups: dict[tuple[str, str, date | None], list[tuple[datetime | None, str]]] = {}
-    for row in rows:
-        text = _first(row, columns, "Message")
+    groups: dict[tuple[str, date | None], list[tuple[datetime | None, str]]] = {}
+    for thread, sender, sent, text in messages:
+        text = (text or "").strip()
         if not text or text in _DM_NOTICES or _DM_PLACEHOLDER.match(text):
             continue
-        sender = _first(row, columns, "Sender")
-        thread = _first(row, columns, "Thread Folder")
-        try:
-            sent = datetime.fromisoformat(_first(row, columns, "Timestamp UTC")).replace(tzinfo=UTC)
-        except ValueError:
-            sent = None
-        day = sent.astimezone(_DM_TIMEZONE).date() if sent else None
-        groups.setdefault((thread, sender, day), []).append((sent, text))
+        day = sent.astimezone(DM_TIMEZONE).date() if sent else None
+        # A message's own line breaks would split it over lines of the document.
+        line = " ".join(text.split())
+        groups.setdefault((thread, day), []).append((sent, f"{sender}: {line}"))
 
     docs = []
-    for (thread, sender, day), messages in groups.items():
-        # Stable, so messages sent in the same instant keep the sheet's order.
-        messages.sort(key=lambda m: m[0] or datetime.max.replace(tzinfo=UTC))
-        text = "\n".join(t for _, t in messages)
-        message = InstagramMessage(sender=sender, text=text, timestamp=messages[0][0])
-        doc_id = _hash_id(thread, sender, day.isoformat() if day else "")
+    for (thread, day), lines in groups.items():
+        # Stable, so messages sent in the same instant keep the order they came in.
+        lines.sort(key=lambda m: m[0] or datetime.max.replace(tzinfo=UTC))
+        text = "\n".join(line for _, line in lines)
+        message = InstagramMessage(sender=thread, text=text, timestamp=lines[0][0])
+        doc_id = _hash_id(thread, day.isoformat() if day else "")
         docs.append(_document(doc_id, message, text))
     return docs
 
@@ -321,7 +322,6 @@ def read_content(path: Path) -> list[IndexDocument]:
 
 SOURCES: dict[str, tuple[str, Callable[[Path], list[IndexDocument]]]] = {
     PRODUCTS: ("products.xlsx", read_products),
-    INSTAGRAM_MESSAGES: ("Instagram_DM_Index.xlsx", read_instagram_messages),
     CONTENT: ("images_index.xlsx", read_content),
 }
 
@@ -395,7 +395,7 @@ def main(argv: list[str] | None = None) -> int:
         "--collection",
         action="append",
         choices=list(SOURCES),
-        help="index only this collection; repeatable (default: all three)",
+        help="index only this collection; repeatable (default: both)",
     )
     parser.add_argument("--limit", type=int, help="index at most N new rows per collection")
     parser.add_argument("--force", action="store_true", help="re-embed rows already stored")

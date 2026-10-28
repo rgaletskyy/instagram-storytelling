@@ -1,5 +1,7 @@
 """The indexer: reading each spreadsheet, and embedding only what is not stored yet."""
 
+from datetime import UTC, datetime
+
 import pytest
 from openpyxl import Workbook
 
@@ -7,8 +9,8 @@ from routines.vector_indexer import indexer
 from routines.vector_indexer.indexer import (
     IndexDocument,
     index_collection,
+    message_documents,
     read_content,
-    read_instagram_messages,
     read_products,
 )
 
@@ -71,51 +73,50 @@ def test_products_without_a_sku_column_fail_rather_than_index_nothing(tmp_path):
         read_products(path)
 
 
-def test_messages_skip_instagram_notices_and_get_stable_ids(tmp_path):
-    path = tmp_path / "dm.xlsx"
-    header = ["Conversation", "Thread Folder", "Sender", "Timestamp UTC", "Message"]
-    rows = [
-        header,
-        ["c", "t1", "Оля", "2026-02-05 11:33:24.577000", "Цікавить прайс?"],
-        ["c", "t1", "Оля", "2026-02-05 11:34:00", "Liked a message"],
-        ["c", "t1", "Оля", "2026-02-05 11:35:00", "[Фото]"],
-        ["c", "t1", "Оля", "2026-02-05 11:36:00", None],
+def _at(text):
+    return datetime.fromisoformat(text).replace(tzinfo=UTC)
+
+
+def test_messages_skip_instagram_notices_and_get_stable_ids():
+    messages = [
+        ("t1", "Оля", _at("2026-02-05 11:33:24.577000"), "Цікавить прайс?"),
+        ("t1", "Оля", _at("2026-02-05 11:34:00"), "Liked a message"),
+        ("t1", "Оля", _at("2026-02-05 11:35:00"), "[Фото]"),
+        ("t1", "Оля", _at("2026-02-05 11:36:00"), None),
     ]
-    _sheet(path, rows)
 
-    (doc,) = read_instagram_messages(path)
+    (doc,) = message_documents(messages)
 
-    assert doc.data["text"] == doc.data["embeddingText"] == "Цікавить прайс?"
+    assert doc.data["text"] == doc.data["embeddingText"] == "Оля: Цікавить прайс?"
     assert doc.data["timestamp"].tzinfo is not None
-    assert read_instagram_messages(path)[0].id == doc.id
+    assert message_documents(messages)[0].id == doc.id
 
 
-def test_messages_are_joined_per_conversation_sender_and_kyiv_day(tmp_path):
-    path = tmp_path / "dm.xlsx"
-    shop = "HealthyDoggo"
-    rows = [
-        ["Conversation", "Thread Folder", "Sender", "Timestamp UTC", "Message"],
-        ["c", "t1", "Оля", "2026-02-05 10:05:00", "а на велику породу?"],
-        ["c", "t1", "Оля", "2026-02-05 09:00:00", "Цікавить шампунь"],
-        ["c", "t1", shop, "2026-02-05 09:30:00", "Добрий день"],
-        ["c", "t2", shop, "2026-02-05 09:40:00", "Вітаємо"],
+def test_a_conversation_day_is_one_document_with_both_sides_in_order():
+    shop = "healthydoggo"
+    messages = [
+        ("olya", "olya", _at("2026-02-05 10:05:00"), "а на велику\nпороду?"),
+        ("olya", "olya", _at("2026-02-05 09:00:00"), "Цікавить шампунь"),
+        ("olya", shop, _at("2026-02-05 09:30:00"), "Добрий день"),
+        ("bob", shop, _at("2026-02-05 09:40:00"), "Вітаємо"),
         # 22:30 UTC on the 5th is 00:30 on the 6th in Kyiv: a new day.
-        ["c", "t1", "Оля", "2026-02-05 22:30:00", "дякую"],
+        ("olya", "olya", _at("2026-02-05 22:30:00"), "дякую"),
     ]
-    _sheet(path, rows)
 
-    docs = {(d.data["sender"], d.data["text"]): d for d in read_instagram_messages(path)}
+    docs = {d.data["text"]: d for d in message_documents(messages)}
 
     assert set(docs) == {
-        ("Оля", "Цікавить шампунь\nа на велику породу?"),
-        (shop, "Добрий день"),
-        (shop, "Вітаємо"),
-        ("Оля", "дякую"),
+        "olya: Цікавить шампунь\nhealthydoggo: Добрий день\nolya: а на велику породу?",
+        "healthydoggo: Вітаємо",
+        "olya: дякую",
     }
-    joined = docs[("Оля", "Цікавить шампунь\nа на велику породу?")].data
-    assert joined["timestamp"].isoformat() == "2026-02-05T09:00:00+00:00"
-    assert joined["embeddingText"] == joined["text"]
-    assert len({d.id for d in docs.values()}) == 4
+    day = docs["olya: Цікавить шампунь\nhealthydoggo: Добрий день\nolya: а на велику породу?"].data
+    # The conversation's customer, whoever wrote the lines.
+    assert day["sender"] == "olya"
+    assert docs["healthydoggo: Вітаємо"].data["sender"] == "bob"
+    assert day["timestamp"].isoformat() == "2026-02-05T09:00:00+00:00"
+    assert day["embeddingText"] == day["text"]
+    assert len({d.id for d in docs.values()}) == 3
 
 
 def test_content_reads_links_from_hyperlinks_and_blanks_not_applicable(tmp_path):

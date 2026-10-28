@@ -53,6 +53,16 @@ class InstagramMessage(_Document):
     timestamp: datetime | None = None
 
 
+class InstagramComment(_Document):
+    """A comment, or a reply to one, under a post or reel. Not searched yet."""
+
+    sender: str = ""
+    text: str = ""
+    timestamp: datetime | None = None
+    # The post or reel the comment was added to.
+    parent_id: str = ""
+
+
 class Content(_Document):
     file_name: str = ""
     drive_url: str = ""
