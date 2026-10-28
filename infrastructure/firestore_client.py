@@ -49,12 +49,20 @@ class FirestoreClient:
         vector: list[float],
         limit: int,
         filters: Mapping[str, Any] | None = None,
+        *,
+        since: datetime | None = None,
+        until: datetime | None = None,
+        max_distance: float | None = None,
+        fields: Iterable[str] | None = None,
     ) -> list[dict]:
         """The `limit` closest documents by cosine distance, closest first.
 
         `filters` are field == value conditions applied before the search, so
-        the limit counts only matching documents. Each combination of filter
-        fields needs its own composite vector index; see README.md.
+        the limit counts only matching documents; `since` / `until` bound
+        `timestamp` the same way, inclusive. Each combination of filter fields
+        needs its own composite vector index; see scripts/deploy.md.
+        `max_distance` leaves out documents further than that. `fields`, when
+        given, are the only ones read, which keeps the vectors from travelling.
 
         Each carries its distance under `distance`; the embedding fields are dropped.
         """
@@ -65,12 +73,20 @@ class FirestoreClient:
         source = self._client.collection(collection)
         for field, value in (filters or {}).items():
             source = source.where(filter=FieldFilter(field, "==", value))
+        if since is not None:
+            source = source.where(filter=FieldFilter(TIMESTAMP_FIELD, ">=", since))
+        if until is not None:
+            source = source.where(filter=FieldFilter(TIMESTAMP_FIELD, "<=", until))
+        if fields is not None:
+            # The computed distance is a field too, and a selection without it drops it.
+            source = source.select([*fields, DISTANCE_FIELD])
         query = source.find_nearest(
             vector_field=VECTOR_FIELD,
             query_vector=Vector(vector),
             limit=limit,
             distance_measure=DistanceMeasure.COSINE,
             distance_result_field=DISTANCE_FIELD,
+            distance_threshold=max_distance,
         )
         try:
             docs = [snapshot.to_dict() async for snapshot in query.stream()]

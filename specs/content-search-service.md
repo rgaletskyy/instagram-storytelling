@@ -60,7 +60,7 @@ Purpose:
 - find messages related to a text query and filtered by period
 
 Input:
-- query: string, required when neither `from` nor `to` is given; not used otherwise
+- query: string, optional; the topic to match. Required when neither `from` nor `to` is given
 - from: timestamp, optional, inclusive; without a timezone, taken as UTC
 - to: timestamp, optional, inclusive; now when absent. Must not be before `from`
 - messageType: string, required, default Both
@@ -76,8 +76,9 @@ Errors:
 
 Behavior:
 - Message reads `instagram_messages`, Comment reads `instagram_comments`, Both reads both
-- With a period (`from` and/or `to`): the newest 50 documents of each collection whose `timestamp` is in it, newest first, and the totals of the whole period; the query is not embedded. A message document is a conversation's day, dated by its first message; `totalMessagesCount` counts the conversations active in the period, each once however many of its days fall in it (distinct `sender`), and `totalCommentsCount` the comments
-- Without a period: the query is embedded and the closest documents are returned by cosine distance, top 20 messages and top 20 comments, closest first, with `distance`, and no totals
+- The matches are the documents whose `timestamp` is in the period (`from` and/or `to`; the whole history without one) and, when a query is given, whose cosine distance to the embedded query is at most 0.4 (up to 1000 per collection, Firestore's maximum for one vector search). A message document is a conversation's day, dated by its first message
+- At most 50 matches of each collection are returned: the closest first with a query, with `distance`; the newest first without one
+- `totalMessagesCount` counts the conversations among all matches, each once however many of its days match (distinct `sender`), and `totalCommentsCount` the matching comments. With a query they are an estimate, since the match is by similarity
 - A collection not read, or with no matches, yields an empty list
 - Must not modify stored documents
 
@@ -99,5 +100,5 @@ Behavior:
 
 - messages: list<InstagramMessage>, optional, default []
 - comments: list<InstagramComment>, optional, default [] (InstagramMessage's fields plus `parentId`, the post or reel)
-- totalMessagesCount: integer, optional. With a period, the unique conversations active in all of it (not only those returned); absent without a period or when messages are not read
-- totalCommentsCount: integer, optional. With a period, comments in all of it; absent without a period or when comments are not read
+- totalMessagesCount: integer, optional. The unique conversations among all matches (not only those returned); absent when messages are not read
+- totalCommentsCount: integer, optional. The comments among all matches; absent when comments are not read

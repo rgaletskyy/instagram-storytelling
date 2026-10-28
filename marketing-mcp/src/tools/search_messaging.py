@@ -15,14 +15,17 @@ DESCRIPTION = (
     "under HealthyDoggo's posts and reels: what customers write or ask about, or how many "
     "messages or comments there were. For example: 'how many messages were sent in June "
     "2026', 'what do people ask most about Calming supplements', 'how many comments asking "
-    "about a product came in September 2025'. "
-    "With a period (`from` and/or `to`) the tool returns the newest 50 message items and/or "
-    "50 comments in it, plus `totalMessagesCount` (conversations active in the whole "
-    "period, each customer once however many days they wrote) and "
-    "`totalCommentsCount` (comments in the whole period); `query` is not used. Answer 'how "
-    "many' from the totals, not by counting the items. "
-    "Without a period it returns the 20 message items and/or 20 comments closest to "
-    "`query`, and no totals. "
+    "about a product came in September 2025', and follow-ups such as 'Скільки з цих "
+    "повідомлень стосувалось запитів по продукції і замовленню'. "
+    "The tool finds the messages and/or comments of the period (`from`/`to`) that match "
+    "`query`: with both, those of the period close in meaning to the query; with a period "
+    "alone, all of the period; with a query alone, matches from the whole history. It "
+    "returns at most 50 of each, the closest first (the newest first without a query), "
+    "plus `totalMessagesCount` (conversations among all matches, each customer once "
+    "however many days they wrote) and `totalCommentsCount` (comments among all matches). "
+    "Answer 'how many' from the totals, not by counting the items. With a query the "
+    "match is by meaning, so the totals are an estimate: say so, and use the items to "
+    "check what was counted. "
     "A message item is one conversation's day: `sender` is the customer, `text` holds the "
     "day's messages from both sides, one a line as 'username: text' (HealthyDoggo's own "
     "are 'healthydoggo.ua: ...'), and `timestamp` is the day's first message. A comment "
@@ -39,9 +42,10 @@ async def search_messaging(
             alias="from",
             description=(
                 "Start of the period, inclusive, as an ISO 8601 datetime, e.g. "
-                "2026-05-01T00:00:00. Give it only when the user names a period; then the "
-                "newest items of the period and its totals are returned. Resolve it against "
-                "today's date: "
+                "2026-05-01T00:00:00. Give it when the user names a period, or refers to "
+                "earlier results ('these messages', 'з цих повідомлень', 'of them'): then "
+                "reuse the period of the previous search_messaging call. Resolve a named "
+                "period against today's date: "
                 "'May' = 2026-05-01T00:00:00; 'last week' = Monday 00:00:00 of the previous "
                 "week; 'in 2025' = 2025-01-01T00:00:00; 'last 30 days' = 30 days before "
                 "now. Dates written as 01.04.2026 are day.month.year. Without a year, use "
@@ -55,7 +59,8 @@ async def search_messaging(
             description=(
                 "End of the period, inclusive, as an ISO 8601 datetime, e.g. "
                 "2026-05-31T23:59:59 for 'May'. Leave empty when the period runs up to now "
-                "('since March', 'last 30 days') or no period was named."
+                "('since March', 'last 30 days') or no period was named. Reuse the previous "
+                "call's `to` when the user refers to earlier results."
             )
         ),
     ] = None,
@@ -72,14 +77,22 @@ async def search_messaging(
         str | None,
         Field(
             description=(
-                "What the messages or comments are about, as a standalone search query, "
-                "e.g. 'заспокійливі добавки для собак'. Required when no period is given; "
-                "ignored with a period."
+                "The topic the messages or comments must be about, as a short standalone "
+                "phrase in the language of the messages (Ukrainian), e.g. 'заспокійливі "
+                "добавки для собак'. Set it whenever the request names a topic, also "
+                "together with a period: 'Скільки з цих повідомлень стосувалось запитів по "
+                "продукції і замовленню, виключаючи співпраці та рекламу' -> 'запити щодо "
+                "продукції, цін і замовлень'. Name only what to find: the search matches "
+                "meaning, so 'not X' or 'excluding X' would find X -- drop exclusions "
+                "('виключаючи співпраці та рекламу') and apply them yourself when reading "
+                "the items. Drop counting words ('скільки', 'how many'), the period and the "
+                "words 'messages'/'comments'. Leave it empty only when the user wants every "
+                "message of a period, with no topic ('how many messages in June')."
             )
         ),
     ] = None,
 ) -> dict[str, Any]:
-    """A period's newest messages and/or comments with its totals, or the closest to a query."""
+    """Messages and/or comments of a period matching a query, at most 50 of each, with totals."""
     body: dict[str, Any] = {"messageType": messageType}
     for name, value in (("from", from_), ("to", to), ("query", query)):
         if value and value.strip():

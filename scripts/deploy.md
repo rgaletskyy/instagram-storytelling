@@ -89,6 +89,13 @@ for c in products instagram_messages content instagram_comments; do
     --collection-group=$c --query-scope=COLLECTION \
     --field-config field-path=embeddingVector,vector-config='{"dimension":"1536","flat":"{}"}'
 done
+# /searchMessaging also searches messages and comments within a period.
+for c in instagram_messages instagram_comments; do
+  gcloud firestore indexes composite create --database=healthydoggo \
+    --collection-group=$c --query-scope=COLLECTION \
+    --field-config=order=ASCENDING,field-path=timestamp \
+    --field-config field-path=embeddingVector,vector-config='{"dimension":"1536","flat":"{}"}'
+done
 
 # Embed products and content from src/resources/indices/ (needs .env, see run.md);
 # instagram_messages comes from the messaging sync (section 9).

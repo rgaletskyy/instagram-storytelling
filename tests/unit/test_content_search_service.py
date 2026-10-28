@@ -6,8 +6,9 @@ import pytest
 
 from domain.content_search_service import (
     DEFAULT_CONTENT_TYPE,
-    MESSAGING_TOP_K,
-    PERIOD_LIMIT,
+    MAX_DISTANCE,
+    QUERY_LIMIT,
+    RESULT_LIMIT,
     THRESHOLD,
     TOP_K,
     SearchService,
@@ -53,9 +54,10 @@ class _Firestore:
         self.searched = []
         self.filters = {}
 
-    async def find_nearest(self, collection, vector, limit, filters=None):
+    async def find_nearest(self, collection, vector, limit, filters=None, **kwargs):
         self.searched.append((collection, vector, limit))
         self.filters[collection] = filters
+        self.nearest_kwargs = kwargs
         return self.hits.get(collection, [])
 
     async def find_in_period(self, collection, since, until, fields):
@@ -209,12 +211,12 @@ async def test_a_period_returns_everything_in_it_from_both_collections_without_e
     )
 
     result = await service.find_messages(
-        "ignored", from_=datetime(2026, 6, 1), to=datetime(2026, 6, 30, 23, 59, 59)
+        from_=datetime(2026, 6, 1), to=datetime(2026, 6, 30, 23, 59, 59)
     )
 
     assert [m.text for m in result.messages] == [DAY["text"]]
     assert [(c.sender, c.parent_id) for c in result.comments] == [("bob", "m1")]
-    # Naive datetimes are UTC; the query is not used with a period.
+    # Naive datetimes are UTC.
     assert firestore.searched == [
         (INSTAGRAM_MESSAGES, datetime(2026, 6, 1, tzinfo=UTC), datetime(2026, 6, 30, 23, 59, 59, tzinfo=UTC)),
         (INSTAGRAM_COMMENTS, datetime(2026, 6, 1, tzinfo=UTC), datetime(2026, 6, 30, 23, 59, 59, tzinfo=UTC)),
@@ -237,25 +239,50 @@ async def test_a_period_with_only_from_runs_to_now_and_with_only_to_from_the_sta
     assert (c2, since2, until2) == (INSTAGRAM_COMMENTS, None, datetime(2026, 6, 30, tzinfo=UTC))
 
 
-async def test_without_a_period_the_closest_to_the_query_are_returned():
+async def test_a_query_within_a_period_finds_everything_close_in_it():
+    days = [{**DAY, "sender": f"customer{i % 20}", "distance": 0.2} for i in range(60)]
+    comments = [{**COMMENT, "distance": 0.25}] * 70
     service, firestore, _, embedder = _service(
-        hits={INSTAGRAM_COMMENTS: [{**COMMENT, "distance": 0.2}]}
+        hits={INSTAGRAM_MESSAGES: days, INSTAGRAM_COMMENTS: comments}
     )
+
+    result = await service.find_messages(
+        " запити про продукцію ", from_=datetime(2026, 6, 1), to=datetime(2026, 6, 30)
+    )
+
+    assert embedder.queries == ["запити про продукцію"]
+    assert [(c, limit) for c, _, limit in firestore.searched] == [
+        (INSTAGRAM_MESSAGES, QUERY_LIMIT),
+        (INSTAGRAM_COMMENTS, QUERY_LIMIT),
+    ]
+    assert firestore.nearest_kwargs == {
+        "since": datetime(2026, 6, 1, tzinfo=UTC),
+        "until": datetime(2026, 6, 30, tzinfo=UTC),
+        "max_distance": MAX_DISTANCE,
+        "fields": ["sender", "text", "timestamp", "parentId"],
+    }
+    # The 50 closest come back; the totals count every close one.
+    assert len(result.messages) == len(result.comments) == RESULT_LIMIT == 50
+    assert result.total_messages_count == 20  # conversations, each once
+    assert result.total_comments_count == 70
+
+
+async def test_a_query_without_a_period_searches_the_whole_history():
+    service, firestore, *_ = _service(hits={INSTAGRAM_COMMENTS: [{**COMMENT, "distance": 0.2}]})
 
     result = await service.find_messages("ціна шампуню", message_type="Comment")
 
-    assert embedder.queries == ["ціна шампуню"]
-    assert firestore.searched == [(INSTAGRAM_COMMENTS, VECTOR, MESSAGING_TOP_K)]
-    assert result.messages == [] and result.comments[0].distance == 0.2
-    # Totals belong to a period only.
-    assert result.total_messages_count is None and result.total_comments_count is None
+    assert [c for c, _, _ in firestore.searched] == [INSTAGRAM_COMMENTS]
+    assert (firestore.nearest_kwargs["since"], firestore.nearest_kwargs["until"]) == (None, None)
+    assert result.comments[0].distance == 0.2 and result.total_comments_count == 1
+    assert result.total_messages_count is None
 
 
 @pytest.mark.parametrize(
     ("kwargs", "message"),
     [
-        ({"query": "  "}, "query"),
-        ({}, "query"),
+        ({"query": "  "}, "period"),
+        ({}, "period"),
         ({"query": "x", "message_type": "DM"}, "messageType"),
         ({"from_": datetime(2026, 6, 2), "to": datetime(2026, 6, 1)}, "before"),
     ],
@@ -267,9 +294,11 @@ async def test_bad_messaging_arguments_are_rejected_before_any_call(kwargs, mess
     assert firestore.searched == [] and embedder.queries == []
 
 
-async def test_an_empty_messaging_result_has_empty_lists():
+async def test_a_search_with_no_matches_has_empty_lists_and_zero_totals():
     service, *_ = _service()
-    assert await service.find_messages("x") == MessagingSearchResult()
+    assert await service.find_messages("x") == MessagingSearchResult(
+        total_messages_count=0, total_comments_count=0
+    )
 
 
 async def test_a_period_returns_the_newest_fifty_and_counts_all_of_it():
@@ -280,7 +309,7 @@ async def test_a_period_returns_the_newest_fifty_and_counts_all_of_it():
 
     result = await service.find_messages(from_=datetime(2026, 6, 1))
 
-    assert len(result.messages) == len(result.comments) == PERIOD_LIMIT == 50
+    assert len(result.messages) == len(result.comments) == RESULT_LIMIT
     # Each conversation once, however many of its days fall in the period.
     assert result.total_messages_count == 20
     assert result.total_comments_count == 70

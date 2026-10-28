@@ -46,17 +46,19 @@ reports in `errorCode`, comes back as a tool error.
 
 ## search_messaging
 
-Calls `POST /searchMessaging`: Instagram direct messages and/or comments. With
-a period, the newest 50 of each in it plus `totalMessagesCount` and
-`totalCommentsCount` for the whole period; without one, the 20 of each
-closest to `query`.
+Calls `POST /searchMessaging`: Instagram direct messages and/or comments of a
+period that match `query` (all of the period without a query, the whole
+history without a period). At most 50 of each come back, closest first, plus
+`totalMessagesCount` (unique conversations) and `totalCommentsCount` over all
+matches. The `query` description tells the model to drop exclusions, which a
+similarity search cannot apply.
 
 | Parameter | |
 |---|---|
 | `from` | optional; ISO 8601 datetime, start of the period, inclusive |
 | `to` | optional; end of the period, inclusive; now when left out |
 | `messageType` | `Message`, `Comment` or `Both` (default) |
-| `query` | required without a period; not used with one |
+| `query` | optional; the topic, also with a period; required without one |
 
 It returns the API's `messages` (each a conversation's day, both sides, one
 message a line as `username: text`) and `comments` (each with `parentId`, the

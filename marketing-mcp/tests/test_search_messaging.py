@@ -86,3 +86,27 @@ async def test_api_errors_become_tool_errors(api):
     api["reply"] = httpx.Response(400, json={"detail": "to must not be before from"})
     with pytest.raises(ToolError, match="before from"):
         await _call({"from": "2026-09-30T00:00:00", "to": "2026-09-01T00:00:00"})
+
+
+async def test_a_query_is_sent_together_with_the_period(api):
+    await _call(
+        {
+            "from": "2026-06-01T00:00:00",
+            "to": "2026-06-30T23:59:59",
+            "query": "запити щодо замовлень",
+        }
+    )
+    assert api["requests"][0]["body"] == {
+        "from": "2026-06-01T00:00:00",
+        "to": "2026-06-30T23:59:59",
+        "messageType": "Both",
+        "query": "запити щодо замовлень",
+    }
+
+
+async def test_the_query_description_teaches_dropping_exclusions():
+    async with Client(_server()) as client:
+        tools = {t.name: t for t in await client.list_tools()}
+    query = tools["search_messaging"].input_schema["properties"]["query"]["description"]
+    # Exclusions are dropped from the query, and a query is no longer ignored with a period.
+    assert "виключаючи" in query and "ignored" not in query
