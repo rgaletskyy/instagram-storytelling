@@ -1,4 +1,4 @@
-"""POST /searchcontent: the user check, the response shape, the error mapping."""
+"""The search API: the user check, the response shapes, the error mapping."""
 
 import json
 import logging
@@ -13,7 +13,10 @@ from domain.content_insights_contracts import ContentInsights
 from domain.contracts import (
     DataSourceError,
     EmbeddingError,
+    InstagramComment,
+    InstagramMessage,
     InvalidArgument,
+    MessagingSearchResult,
     Product,
     SearchResult,
 )
@@ -50,6 +53,15 @@ class _Search:
         if self.error:
             raise self.error
         return self.result
+
+    async def find_messages(self, query=None, from_=None, to=None, message_type="Both"):
+        self.queries.append(query)
+        self.calls.append({"from": from_, "to": to, "message_type": message_type})
+        if self.error:
+            raise self.error
+        return self.messaging
+
+    messaging = MessagingSearchResult()
 
 
 @pytest.fixture
@@ -305,3 +317,55 @@ def test_content_insights_need_from_and_an_allowed_user(configured):
         assert _insights(client, {"from": "2026-10-01", "topN": "five"}).status_code == 422
         assert _insights(client, {"from": "2026-10-01"}, token="stranger").status_code == 403
         assert _insights(client, {"from": "2026-10-01", "sortBy": "x"}).status_code == 400
+
+
+def _messaging(client, body, token="good"):
+    return client.post("/searchMessaging", json=body, headers={auth.USER_TOKEN_HEADER: token})
+
+
+def test_messaging_passes_the_period_and_answers_in_contract_names(configured):
+    search = _Search()
+    search.messaging = MessagingSearchResult(
+        comments=[InstagramComment(sender="bob", text="Ціна?", parent_id="m1")],
+        total_comments_count=1,
+    )
+    body = {"from": "2026-06-01T00:00:00", "to": "2026-06-30T23:59:59", "messageType": "Comment"}
+    with _client(search) as client:
+        response = _messaging(client, body)
+
+    assert response.status_code == 200
+    # No messages: the empty list is left out.
+    assert response.json() == {
+        "comments": [{"sender": "bob", "text": "Ціна?", "parentId": "m1"}],
+        "totalCommentsCount": 1,
+    }
+    (call,) = search.calls
+    assert call["from"].isoformat() == "2026-06-01T00:00:00"
+    assert call["message_type"] == "Comment"
+    assert search.queries == [None]
+
+
+def test_messaging_defaults_to_both_and_passes_the_query(configured):
+    search = _Search()
+    search.messaging = MessagingSearchResult(messages=[InstagramMessage(sender="anna", text="a")])
+    with _client(search) as client:
+        response = _messaging(client, {"query": "заспокійливе"})
+
+    assert response.json() == {"messages": [{"sender": "anna", "text": "a"}]}
+    assert search.queries == ["заспокійливе"]
+    assert search.calls == [{"from": None, "to": None, "message_type": "Both"}]
+
+
+@pytest.mark.parametrize(
+    ("error", "code"),
+    [
+        (InvalidArgument("messageType"), 400),
+        (EmbeddingError("x"), 502),
+        (DataSourceError("x"), 503),
+    ],
+)
+def test_messaging_errors_map_to_status_codes(configured, error, code):
+    with _client(_Search(error=error)) as client:
+        assert _messaging(client, {"query": "x"}).status_code == code
+        assert _messaging(client, {"from": "not a date"}).status_code == 422
+        assert _messaging(client, {"query": "x"}, token="stranger").status_code == 403

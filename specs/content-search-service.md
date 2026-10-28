@@ -54,7 +54,35 @@ Behavior:
 Side Effects:
 - None
 
+### findMessages
+
+Purpose:
+- find messages related to a text query and filtered by period
+
+Input:
+- query: string, required when neither `from` nor `to` is given; not used otherwise
+- from: timestamp, optional, inclusive; without a timezone, taken as UTC
+- to: timestamp, optional, inclusive; now when absent. Must not be before `from`
+- messageType: string, required, default Both
+  One of Message | Comment | Both
+
+Output:
+- MessagingSearchResult
+
+Errors:
+- InvalidArgument — messageType outside the allowed values, `to` before `from`, or no period and an empty query
+- EmbeddingError — embedding model cannot be reached
+- DataSourceError — Firestore cannot be accessed
+
+Behavior:
+- Message reads `instagram_messages`, Comment reads `instagram_comments`, Both reads both
+- With a period (`from` and/or `to`): the newest 50 documents of each collection whose `timestamp` is in it, newest first, and the totals of the whole period; the query is not embedded. A message document is a conversation's day, dated by its first message; `totalMessagesCount` counts the conversations active in the period, each once however many of its days fall in it (distinct `sender`), and `totalCommentsCount` the comments
+- Without a period: the query is embedded and the closest documents are returned by cosine distance, top 20 messages and top 20 comments, closest first, with `distance`, and no totals
+- A collection not read, or with no matches, yields an empty list
+- Must not modify stored documents
+
 ## Data Contracts
+
 
 ### SearchResult
 
@@ -66,3 +94,10 @@ Side Effects:
 
 - fields as in the collection schemas in [marketing-content-rag.md](marketing-content-rag.md)
 - `embeddingText` and `embeddingVector` are not returned
+
+### MessagingSearchResult
+
+- messages: list<InstagramMessage>, optional, default []
+- comments: list<InstagramComment>, optional, default [] (InstagramMessage's fields plus `parentId`, the post or reel)
+- totalMessagesCount: integer, optional. With a period, the unique conversations active in all of it (not only those returned); absent without a period or when messages are not read
+- totalCommentsCount: integer, optional. With a period, comments in all of it; absent without a period or when comments are not read

@@ -14,7 +14,7 @@ from pydantic.alias_generators import to_camel
 
 
 class InvalidArgument(ValueError):
-    """The query is empty."""
+    """A parameter is missing or outside the values allowed."""
 
 
 class EmbeddingError(RuntimeError):
@@ -54,7 +54,7 @@ class InstagramMessage(_Document):
 
 
 class InstagramComment(_Document):
-    """A comment, or a reply to one, under a post or reel. Not searched yet."""
+    """A comment, or a reply to one, under a post or reel."""
 
     sender: str = ""
     text: str = ""
@@ -87,3 +87,17 @@ class SearchResult(BaseModel):
     products: list[Product] = Field(default_factory=list)
     instagram_messages: list[InstagramMessage] = Field(default_factory=list)
     content: list[Content] = Field(default_factory=list)
+
+
+class MessagingSearchResult(BaseModel):
+    """Direct messages (one document per conversation and day) and comments."""
+
+    model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
+
+    messages: list[InstagramMessage] = Field(default_factory=list)
+    comments: list[InstagramComment] = Field(default_factory=list)
+    # A period's totals, beyond the documents returned: the conversations active
+    # in it, each once, and the comments. None without a period, or for a
+    # collection not read.
+    total_messages_count: int | None = None
+    total_comments_count: int | None = None

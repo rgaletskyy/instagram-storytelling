@@ -1,10 +1,24 @@
-"""SearchService.find_similar against the behaviour in specs/content-search-service.md."""
+"""SearchService against the behaviour in specs/content-search-service.md."""
+
+from datetime import UTC, datetime, timedelta
 
 import pytest
 
-from domain.content_search_service import DEFAULT_CONTENT_TYPE, THRESHOLD, TOP_K, SearchService
-from domain.contracts import EmbeddingError, InvalidArgument, SearchResult
-from infrastructure.firestore_client import CONTENT, INSTAGRAM_MESSAGES, PRODUCTS
+from domain.content_search_service import (
+    DEFAULT_CONTENT_TYPE,
+    MESSAGING_TOP_K,
+    PERIOD_LIMIT,
+    THRESHOLD,
+    TOP_K,
+    SearchService,
+)
+from domain.contracts import EmbeddingError, InvalidArgument, MessagingSearchResult, SearchResult
+from infrastructure.firestore_client import (
+    CONTENT,
+    INSTAGRAM_COMMENTS,
+    INSTAGRAM_MESSAGES,
+    PRODUCTS,
+)
 
 pytestmark = pytest.mark.unit
 
@@ -42,6 +56,11 @@ class _Firestore:
     async def find_nearest(self, collection, vector, limit, filters=None):
         self.searched.append((collection, vector, limit))
         self.filters[collection] = filters
+        return self.hits.get(collection, [])
+
+    async def find_in_period(self, collection, since, until, fields):
+        self.searched.append((collection, since, until))
+        self.filters[collection] = fields
         return self.hits.get(collection, [])
 
 
@@ -176,3 +195,100 @@ async def test_without_a_sku_jev_still_decides_on_products():
     service, firestore, *_ = _service({PRODUCTS: 0.05, CONTENT: 0.95})
     await service.find_similar("фото для сторіз", product_sku="  ")
     assert {c for c, _, _ in firestore.searched} == {CONTENT}
+
+
+# --- find_messages ---------------------------------------------------------------
+
+DAY = {"sender": "anna", "text": "anna: Є шампунь?\nhealthydoggo.ua: Так", "timestamp": datetime(2026, 6, 3, tzinfo=UTC)}  # fmt: skip
+COMMENT = {"sender": "bob", "text": "Ціна?", "timestamp": datetime(2026, 6, 4, tzinfo=UTC), "parentId": "m1"}  # fmt: skip
+
+
+async def test_a_period_returns_everything_in_it_from_both_collections_without_embedding():
+    service, firestore, _, embedder = _service(
+        hits={INSTAGRAM_MESSAGES: [DAY], INSTAGRAM_COMMENTS: [COMMENT]}
+    )
+
+    result = await service.find_messages(
+        "ignored", from_=datetime(2026, 6, 1), to=datetime(2026, 6, 30, 23, 59, 59)
+    )
+
+    assert [m.text for m in result.messages] == [DAY["text"]]
+    assert [(c.sender, c.parent_id) for c in result.comments] == [("bob", "m1")]
+    # Naive datetimes are UTC; the query is not used with a period.
+    assert firestore.searched == [
+        (INSTAGRAM_MESSAGES, datetime(2026, 6, 1, tzinfo=UTC), datetime(2026, 6, 30, 23, 59, 59, tzinfo=UTC)),
+        (INSTAGRAM_COMMENTS, datetime(2026, 6, 1, tzinfo=UTC), datetime(2026, 6, 30, 23, 59, 59, tzinfo=UTC)),
+    ]  # fmt: skip
+    assert embedder.queries == []
+    # Only the stored fields are read, never the vectors.
+    assert firestore.filters[INSTAGRAM_COMMENTS] == ["sender", "text", "timestamp", "parentId"]
+
+
+async def test_a_period_with_only_from_runs_to_now_and_with_only_to_from_the_start():
+    service, firestore, *_ = _service()
+    before = datetime.now(UTC)
+
+    await service.find_messages(from_=datetime(2026, 6, 1, tzinfo=UTC), message_type="Message")
+    await service.find_messages(to=datetime(2026, 6, 30, tzinfo=UTC), message_type="Comment")
+
+    (c1, since1, until1), (c2, since2, until2) = firestore.searched
+    assert (c1, since1) == (INSTAGRAM_MESSAGES, datetime(2026, 6, 1, tzinfo=UTC))
+    assert before <= until1 <= datetime.now(UTC) + timedelta(seconds=1)
+    assert (c2, since2, until2) == (INSTAGRAM_COMMENTS, None, datetime(2026, 6, 30, tzinfo=UTC))
+
+
+async def test_without_a_period_the_closest_to_the_query_are_returned():
+    service, firestore, _, embedder = _service(
+        hits={INSTAGRAM_COMMENTS: [{**COMMENT, "distance": 0.2}]}
+    )
+
+    result = await service.find_messages("ціна шампуню", message_type="Comment")
+
+    assert embedder.queries == ["ціна шампуню"]
+    assert firestore.searched == [(INSTAGRAM_COMMENTS, VECTOR, MESSAGING_TOP_K)]
+    assert result.messages == [] and result.comments[0].distance == 0.2
+    # Totals belong to a period only.
+    assert result.total_messages_count is None and result.total_comments_count is None
+
+
+@pytest.mark.parametrize(
+    ("kwargs", "message"),
+    [
+        ({"query": "  "}, "query"),
+        ({}, "query"),
+        ({"query": "x", "message_type": "DM"}, "messageType"),
+        ({"from_": datetime(2026, 6, 2), "to": datetime(2026, 6, 1)}, "before"),
+    ],
+)
+async def test_bad_messaging_arguments_are_rejected_before_any_call(kwargs, message):
+    service, firestore, _, embedder = _service()
+    with pytest.raises(InvalidArgument, match=message):
+        await service.find_messages(**kwargs)
+    assert firestore.searched == [] and embedder.queries == []
+
+
+async def test_an_empty_messaging_result_has_empty_lists():
+    service, *_ = _service()
+    assert await service.find_messages("x") == MessagingSearchResult()
+
+
+async def test_a_period_returns_the_newest_fifty_and_counts_all_of_it():
+    # 60 conversation-days of 20 customers, three days each.
+    days = [{**DAY, "sender": f"customer{i % 20}"} for i in range(60)]
+    comments = [COMMENT] * 70
+    service, *_ = _service(hits={INSTAGRAM_MESSAGES: days, INSTAGRAM_COMMENTS: comments})
+
+    result = await service.find_messages(from_=datetime(2026, 6, 1))
+
+    assert len(result.messages) == len(result.comments) == PERIOD_LIMIT == 50
+    # Each conversation once, however many of its days fall in the period.
+    assert result.total_messages_count == 20
+    assert result.total_comments_count == 70
+
+
+async def test_a_collection_not_read_has_no_total():
+    service, *_ = _service()
+
+    result = await service.find_messages(from_=datetime(2026, 6, 1), message_type="Comment")
+
+    assert result.total_comments_count == 0 and result.total_messages_count is None

@@ -73,8 +73,9 @@ one Jev is torn over can search two or all three.
 
 ## Search API
 
-`search-api/src/api` puts `SearchService` behind one HTTP endpoint for the marketing portal
-(a Next.js app). Spec: `specs/search-api.md`.
+`search-api/src/api` puts `SearchService` behind HTTP endpoints (`/searchcontent`,
+`/searchContentInsights`, `/searchMessaging`) for the marketing portal (a Next.js app)
+and the MCP. Spec: `specs/search-api.md`.
 
 ```
 POST /searchcontent

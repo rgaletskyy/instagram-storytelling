@@ -22,8 +22,18 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from domain.content_insights_contracts import ContentInsights
 from domain.content_insights_service import ContentInsightsService
-from domain.content_search_service import DEFAULT_CONTENT_TYPE, SearchService
-from domain.contracts import DataSourceError, EmbeddingError, InvalidArgument, SearchResult
+from domain.content_search_service import (
+    DEFAULT_CONTENT_TYPE,
+    DEFAULT_MESSAGE_TYPE,
+    SearchService,
+)
+from domain.contracts import (
+    DataSourceError,
+    EmbeddingError,
+    InvalidArgument,
+    MessagingSearchResult,
+    SearchResult,
+)
 
 from .auth import AuthSettings, User, current_user
 from .responses import without_empty
@@ -52,6 +62,16 @@ class InsightsRequest(BaseModel):
     media_product_type: str | None = Field(default=None, alias="mediaProductType")
     sort_by: str | None = Field(default=None, alias="sortBy")
     top_n: int | None = Field(default=None, alias="topN")
+
+
+class MessagingRequest(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    # With a period, everything in it; without one, the closest to `query`.
+    from_: datetime | None = Field(default=None, alias="from")
+    to: datetime | None = None
+    message_type: str = Field(default=DEFAULT_MESSAGE_TYPE, alias="messageType")
+    query: str | None = None
 
 
 class _CloudLoggingFormatter(logging.Formatter):
@@ -173,6 +193,53 @@ def create_app(
         level = logging.ERROR if result.error_code else logging.INFO
         message = f"bigquery failed: {result.error_message}" if result.error_code else "queried"
         _log(level, message, fields, started, status=200, items=len(result.items))
+        return result
+
+    @app.post(
+        "/searchMessaging", response_model=MessagingSearchResult, response_model_by_alias=True
+    )
+    @without_empty
+    async def search_messaging(
+        body: MessagingRequest, user: Annotated[User, Depends(current_user)]
+    ):
+        started = time.perf_counter()
+        fields = {
+            "user": user.email,
+            "caller": "service" if user.is_service else "user",
+            "action": "searchMessaging",
+            "from": body.from_,
+            "to": body.to,
+            "messageType": body.message_type,
+            "query": body.query,
+        }
+        try:
+            result = await app.state.search.find_messages(
+                body.query, from_=body.from_, to=body.to, message_type=body.message_type
+            )
+        except InvalidArgument as exc:
+            _log(logging.INFO, "rejected", fields, started, status=400)
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+        except EmbeddingError as exc:
+            _log(logging.ERROR, f"embedding failed: {exc}", fields, started, status=502)
+            raise HTTPException(
+                status.HTTP_502_BAD_GATEWAY, detail="search is unavailable"
+            ) from exc
+        except DataSourceError as exc:
+            _log(logging.ERROR, f"firestore failed: {exc}", fields, started, status=503)
+            raise HTTPException(
+                status.HTTP_503_SERVICE_UNAVAILABLE, detail="search is unavailable"
+            ) from exc
+        _log(
+            logging.INFO,
+            "searched",
+            fields,
+            started,
+            status=200,
+            messages=len(result.messages),
+            comments=len(result.comments),
+            totalMessagesCount=result.total_messages_count,
+            totalCommentsCount=result.total_comments_count,
+        )
         return result
 
     return app

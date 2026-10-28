@@ -1,23 +1,35 @@
 """Finds documents close to a user query. Implements specs/content-search-service.md.
 
-Jev decides which collections the query is about; only those are searched, by
-cosine distance against the query's embedding.
+`find_similar`: Jev decides which collections the query is about; only those
+are searched, by cosine distance against the query's embedding.
+`find_messages`: direct messages and comments, all of a period or the closest
+to a query.
 """
 
 from __future__ import annotations
 
 import asyncio
+from datetime import UTC, datetime
 
 from infrastructure.embedding_client import EmbeddingClient
 from infrastructure.firestore_client import (
     CONTENT,
+    INSTAGRAM_COMMENTS,
     INSTAGRAM_MESSAGES,
     PRODUCTS,
     FirestoreClient,
 )
 from infrastructure.jev_client import JevClient
 
-from .contracts import Content, InstagramMessage, InvalidArgument, Product, SearchResult
+from .contracts import (
+    Content,
+    InstagramComment,
+    InstagramMessage,
+    InvalidArgument,
+    MessagingSearchResult,
+    Product,
+    SearchResult,
+)
 
 THRESHOLD = 0.3
 # The content types a search can ask for, as the image index writes them.
@@ -50,6 +62,24 @@ COLLECTION_DESCRIPTIONS = {
 
 _MODELS = {PRODUCTS: Product, INSTAGRAM_MESSAGES: InstagramMessage, CONTENT: Content}
 _FIELDS = {PRODUCTS: "products", INSTAGRAM_MESSAGES: "instagram_messages", CONTENT: "content"}
+
+# find_messages: which collections each messageType reads, and the result field
+# and model of each.
+MESSAGE_TYPES = {
+    "Message": (INSTAGRAM_MESSAGES,),
+    "Comment": (INSTAGRAM_COMMENTS,),
+    "Both": (INSTAGRAM_MESSAGES, INSTAGRAM_COMMENTS),
+}
+DEFAULT_MESSAGE_TYPE = "Both"
+# How many of the closest documents a query without a period returns, per collection.
+MESSAGING_TOP_K = 20
+# How many documents of a period are returned, newest first, per collection.
+PERIOD_LIMIT = 50
+# Per collection: the result's list field, its total field, and the model.
+_MESSAGING = {
+    INSTAGRAM_MESSAGES: ("messages", "total_messages_count", InstagramMessage),
+    INSTAGRAM_COMMENTS: ("comments", "total_comments_count", InstagramComment),
+}
 
 
 class SearchService:
@@ -112,3 +142,73 @@ class SearchService:
             model = _MODELS[collection]
             setattr(result, _FIELDS[collection], [model.model_validate(d) for d in docs])
         return result
+
+    async def find_messages(
+        self,
+        query: str | None = None,
+        from_: datetime | None = None,
+        to: datetime | None = None,
+        message_type: str = DEFAULT_MESSAGE_TYPE,
+    ) -> MessagingSearchResult:
+        """Direct messages and/or comments, by `message_type` (Message, Comment or Both).
+
+        With a period -- `from_` and/or `to`, inclusive, a naive datetime taken
+        as UTC, `to` now when absent -- the newest PERIOD_LIMIT documents of
+        each collection in it, and the totals of the whole period: the
+        conversations active in it, each counted once however many days it
+        ran (a message document is a conversation's day, dated by its first
+        message), and the comments. `query` is not used. Without a period, the MESSAGING_TOP_K closest documents to
+        `query`, which must then not be empty, and no totals.
+        """
+        if message_type not in MESSAGE_TYPES:
+            raise InvalidArgument(
+                f"messageType must be one of {', '.join(MESSAGE_TYPES)}, got {message_type!r}"
+            )
+        collections = MESSAGE_TYPES[message_type]
+        result = MessagingSearchResult()
+
+        if from_ is not None or to is not None:
+            since = _utc(from_) if from_ is not None else None
+            until = _utc(to) if to is not None else datetime.now(UTC)
+            if since is not None and until < since:
+                raise InvalidArgument("to must not be before from")
+            # The whole period is read, to count it; only the newest are returned.
+            found = await asyncio.gather(
+                *(
+                    self._firestore.find_in_period(
+                        c, since, until, _stored_fields(_MESSAGING[c][2])
+                    )
+                    for c in collections
+                )
+            )
+            for collection, docs in zip(collections, found, strict=True):
+                field, total, model = _MESSAGING[collection]
+                if collection == INSTAGRAM_MESSAGES:
+                    # Conversations, not their days: `sender` names the conversation.
+                    count = len({d.get("sender") for d in docs})
+                else:
+                    count = len(docs)
+                setattr(result, total, count)
+                setattr(result, field, [model.model_validate(d) for d in docs[:PERIOD_LIMIT]])
+            return result
+
+        if not query or not query.strip():
+            raise InvalidArgument("query must not be empty when no period is given")
+        vector = await self._embedder.embed_query(query)
+        found = await asyncio.gather(
+            *(self._firestore.find_nearest(c, vector, MESSAGING_TOP_K) for c in collections)
+        )
+        for collection, docs in zip(collections, found, strict=True):
+            field, _, model = _MESSAGING[collection]
+            setattr(result, field, [model.model_validate(d) for d in docs])
+        return result
+
+
+def _utc(moment: datetime) -> datetime:
+    """A naive datetime is taken as UTC."""
+    return moment if moment.tzinfo else moment.replace(tzinfo=UTC)
+
+
+def _stored_fields(model) -> list[str]:
+    """The Firestore names of a model's fields, the distance left out."""
+    return [f.alias or name for name, f in model.model_fields.items() if name != "distance"]

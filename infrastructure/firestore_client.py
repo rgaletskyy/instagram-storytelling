@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import os
 from collections.abc import Iterable, Mapping
+from datetime import datetime
 from typing import Any
 
 from domain.contracts import DataSourceError
@@ -17,7 +18,7 @@ PRODUCTS = "products"
 INSTAGRAM_MESSAGES = "instagram_messages"
 CONTENT = "content"
 COLLECTIONS = (PRODUCTS, INSTAGRAM_MESSAGES, CONTENT)
-# Written by routines/messaging_sync; not searched by SearchService yet.
+# Written by routines/messaging_sync; searched by SearchService.find_messages only.
 INSTAGRAM_COMMENTS = "instagram_comments"
 
 EMBEDDING_TEXT_FIELD = "embeddingText"
@@ -26,8 +27,9 @@ DISTANCE_FIELD = "distance"
 # Firestore commits at most 500 writes at once; a document carries a 1536-float
 # vector, so a smaller batch also keeps each request well under its size limit.
 WRITE_BATCH = 100
-# Documents fetched per get_all.
+# Documents fetched per get_all, and per page of a period.
 READ_BATCH = 300
+TIMESTAMP_FIELD = "timestamp"
 
 
 class FirestoreClient:
@@ -80,6 +82,42 @@ class FirestoreClient:
         # The query already returns them closest first; sorting again keeps
         # that a guarantee of this method rather than of the backend.
         return sorted(docs, key=lambda d: d.get(DISTANCE_FIELD, float("inf")))
+
+    async def find_in_period(
+        self,
+        collection: str,
+        since: datetime | None,
+        until: datetime,
+        fields: Iterable[str],
+    ) -> list[dict]:
+        """Every document with `since` <= timestamp <= `until`, newest first, `fields` only.
+
+        Read a page at a time, and only the fields asked for: a year of a
+        collection is thousands of documents, and their vectors would be most
+        of the bytes.
+        """
+        from google.cloud.firestore_v1.base_query import FieldFilter
+
+        query = self._client.collection(collection).where(
+            filter=FieldFilter(TIMESTAMP_FIELD, "<=", until)
+        )
+        if since is not None:
+            query = query.where(filter=FieldFilter(TIMESTAMP_FIELD, ">=", since))
+        query = query.select(list(fields)).order_by(TIMESTAMP_FIELD, direction="DESCENDING")
+        docs: list[dict] = []
+        last = None
+        try:
+            while True:
+                page = query.limit(READ_BATCH)
+                if last is not None:
+                    page = page.start_after(last)
+                snapshots = [s async for s in page.stream()]
+                docs.extend(snapshot.to_dict() for snapshot in snapshots)
+                if len(snapshots) < READ_BATCH:
+                    return docs
+                last = snapshots[-1]
+        except Exception as exc:  # noqa: BLE001
+            raise DataSourceError(f"Firestore could not read {collection}: {exc}") from exc
 
     async def existing_ids(self, collection: str) -> set[str]:
         try:

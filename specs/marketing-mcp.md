@@ -7,11 +7,8 @@ MCP will have next functionality:
 - generate copy/caption for post according to brand rules.
 - validate captions and return comments, improvements.
 - generate image(s) from scratch using user input and/or samples
-
 - generate slide for story telling containing text, image and brand elements
-
-- create script for story telling
-- validate slide and return comments
+- search thru client DM and comments to posts
 
 ## Tools
 
@@ -118,9 +115,26 @@ description what should be present on slide, objects, text.
 - Returns the slide as a JPEG image in the chat.
 
 
-### create_storytelling_script
+### search_messaging
 
-### create_smm_slide
+Invoke this tool when users asks about instagram direct messages and comments and want to search thru them of fetch quantity. For example: `How many messages has been sent in June 2026`, `What is the most popular request in messages about Calmin Supplements`, `How many comments asking about product received in Septmeber 2025`
 
-### validate_smm_slide
+#### parameters
 
+- from: string, optional, ISO 8601 datetime (e.g. `2026-05-01T00:00:00`). Start of the period, inclusive. Given only when the user names a period.
+  Resolve the period the user names into exact dates: "May" = from the 1st of May 00:00:00; "previous week" = Monday 00:00:00 of last week; "in 2025" = 2025-01-01T00:00:00.
+  Dates written as 01.04.2026 are day.month.year. Use the current year when the user gives none, or the previous one if that month has not come yet.
+  Without a timezone, taken as UTC.
+- to: string, optional, ISO 8601 datetime. End of the period, inclusive, e.g. `2026-05-31T23:59:59` for "May".
+  Leave empty when the period runs up to now ("since March", "last 30 days"). Must not be before `from`.
+- messageType: string, type of messaging client is asking. One of Message | Comment | Both. If none specifeid use Both. If user mentions messages and comments use Both.
+- query: string, context user is asking about. For example `Find all messages related to Calming Supplemenets in 2025`. Required when no period is given; not used with a period.
+
+#### behaviour
+
+Based on messageType fetch data from proper collection. If messageType=Message, fetch from `instagram_messages`, if messageType=Comment fetch from `instagram_comments`. If messageType=Both, fetch from both collections.
+Passed to the search API's `POST /searchMessaging` (see [search-api.md](search-api.md)).
+- With a period (`from` and/or `to`): the newest 50 messages and/or 50 comments in it, plus `totalMessagesCount` (unique conversations) and `totalCommentsCount` for the whole period. "How many" questions are answered from the totals.
+- Without a period: the 20 messages and/or 20 comments closest to `query`, no totals.
+- Neither a period nor a query is a tool error.
+- Returns the API's MessagingSearchResult as is: `totalMessagesCount`, `totalCommentsCount`, `messages`, each a conversation's day (`sender` = the customer, `text` = the day's messages from both sides, one a line as `username: text`, `timestamp` = the first message), and `comments`, each with `parentId`, the post or reel.

@@ -396,6 +396,7 @@ curl -s -o /dev/null -w '%{http_code}\n' -X POST $MCP_URL/mcp                 # 
 curl -s -o /dev/null -w '%{http_code}\n' -X POST $WEBHOOK_URL/meta/webhook    # 401: unsigned
 ```
 
-The search routes are `/searchcontent` and `/searchContentInsights`; the
+The search routes are `/searchcontent`, `/searchContentInsights` and
+`/searchMessaging`; the
 portal and the MCP call them by name, so a rename means redeploying the API,
 the portal and the MCP together.

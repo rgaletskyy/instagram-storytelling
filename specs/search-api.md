@@ -55,3 +55,20 @@ Empty parameters are ignored. Errors: 400 InvalidArgument for a value outside th
 ### Response 
 
 ContentInsights (see [content-insights-service.md](content-insights-service.md)): `items`, an array of content items with their insights, plus `errorCode` / `errorMessage` set when BigQuery failed.
+
+
+## searchMessaging
+
+
+### Request
+
+POST /searchMessaging
+Body: {from: "" (optional), to: "" (optional), messageType: "Message" | "Comment" | "Both" (default "Both"), query: "" (optional)}
+
+Parameters, as `findMessages` in [content-search-service.md](content-search-service.md): with `from` and/or `to` (ISO 8601 datetimes, inclusive, UTC without a timezone, `to` now when absent) the newest 50 messages and/or comments of the period plus `totalMessagesCount` / `totalCommentsCount` for all of it, and `query` is not used; without a period the 20 closest to `query`, which is then required.
+
+Errors: 400 InvalidArgument for a messageType outside the allowed values, `to` before `from`, or no period and an empty query; 422 when `from` or `to` is not a datetime; 502 when the embedding model fails; 503 when Firestore fails.
+
+### Response
+
+MessagingSearchResult (see [content-search-service.md](content-search-service.md)): `messages`, `comments`, array of messages and/or cooments feteched for specified period and query.

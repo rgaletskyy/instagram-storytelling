@@ -44,6 +44,24 @@ how to turn a request like "top 5 posts from May by likes and saves" into them.
 It returns the API's `items`. An API error, or a BigQuery failure the API
 reports in `errorCode`, comes back as a tool error.
 
+## search_messaging
+
+Calls `POST /searchMessaging`: Instagram direct messages and/or comments. With
+a period, the newest 50 of each in it plus `totalMessagesCount` and
+`totalCommentsCount` for the whole period; without one, the 20 of each
+closest to `query`.
+
+| Parameter | |
+|---|---|
+| `from` | optional; ISO 8601 datetime, start of the period, inclusive |
+| `to` | optional; end of the period, inclusive; now when left out |
+| `messageType` | `Message`, `Comment` or `Both` (default) |
+| `query` | required without a period; not used with one |
+
+It returns the API's `messages` (each a conversation's day, both sides, one
+message a line as `username: text`) and `comments` (each with `parentId`, the
+post or reel). Neither a period nor a query, or an API error, is a tool error.
+
 ## generate_image
 
 | Parameter | |
